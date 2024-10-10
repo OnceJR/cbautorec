@@ -11,18 +11,15 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 def obtener_enlace(url):
-    command_yt_dlp = [
-        'yt-dlp',
-        '-f', 'best',
-        '-g',
-        url
-    ]
+    """Obtiene el enlace de transmisión utilizando yt-dlp."""
+    command_yt_dlp = ['yt-dlp', '-g', url]  # Quita '-f best'
     try:
         output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        return output  # Regresa el enlace del flujo
+        return output
     except subprocess.CalledProcessError as e:
         print(f"Error al obtener el enlace: {e}")
         return None
+
 
 async def grabar_clip(url):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
