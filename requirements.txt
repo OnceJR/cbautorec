@@ -1,0 +1,3 @@
+pyrogram
+boto3
+yt-dlp
