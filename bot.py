@@ -2,6 +2,8 @@ import subprocess
 import time
 import os
 from pyrogram import Client, filters
+from flask import Flask
+import threading
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -10,6 +12,17 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Iniciar una aplicación Flask para escuchar en un puerto "falso"
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot de Telegram funcionando"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=5000)
+
+# Función para obtener el enlace de transmisión
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
@@ -24,6 +37,7 @@ def obtener_enlace(url):
         print(f"Error al obtener el enlace: {e}")
         return None
 
+# Función para grabar un clip
 async def grabar_clip(url):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
     duration = 30  # Duración fija a 30 segundos
@@ -41,10 +55,12 @@ async def grabar_clip(url):
     subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
     return output_file
 
+# Manejador del comando /grabar
 @bot.on_message(filters.command('grabar'))
 async def handle_grabar(client, message):
     await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
 
+# Procesador de URL para grabar el clip
 @bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
     url = message.text
@@ -65,6 +81,7 @@ async def process_url(client, message):
     else:
         await message.reply("No se pudo obtener el enlace de la transmisión.")
 
+# Manejador del comando /start
 @bot.on_message(filters.command('start'))
 async def send_welcome(client, message):
     welcome_message = (
@@ -74,6 +91,10 @@ async def send_welcome(client, message):
     )
     await message.reply(welcome_message)
 
-# Ejecutar el bot
+# Ejecutar el bot y el servidor Flask en paralelo
 if __name__ == '__main__':
+    # Ejecutar Flask en un hilo separado
+    threading.Thread(target=run_flask).start()
+    
+    # Ejecutar el bot de Telegram
     bot.run()
