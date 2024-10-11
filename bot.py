@@ -27,11 +27,11 @@ async def download_video(url):
         print(f"Error al descargar el video: {e}")
         return None
 
-@bot.on_message(filters.command('descargar'))
+@bot.on_message(filters.command('descargar') & filters.private)
 async def handle_download(client, message):
     await message.reply("Por favor, envía la URL del video de Google Drive.")
 
-@bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
+@bot.on_message(filters.text & filters.private & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
     url = message.text.strip()
     await message.reply("Descargando video de Google Drive...")
@@ -46,7 +46,7 @@ async def process_url(client, message):
     else:
         await message.reply("No se pudo descargar el video.")
 
-@bot.on_message(filters.command('start'))
+@bot.on_message(filters.command('start') & filters.private)
 async def send_welcome(client, message):
     welcome_message = (
         "¡Hola! Bienvenido a mi bot.\n\n"
