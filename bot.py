@@ -26,7 +26,6 @@ def run_flask():
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
-        '-f', 'best',
         '-g',
         url
     ]
