@@ -26,6 +26,7 @@ def run_flask():
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
+        '--cookies', 'chaturbate_cookies.txt',  # Archivo de cookies
         '-g',
         url
     ]
