@@ -64,4 +64,4 @@ def home():
 if __name__ == '__main__':
     # Ejecutar el bot en un hilo separado
     bot.run()  
-    app.run(host='0.0.0.0', port=8000)  # Cambia el puerto si es necesario
+    app.run(host='0.0.0.0', port=10000) # Cambia el puerto si es necesario
