@@ -1,7 +1,5 @@
 import subprocess
-import time
 import os
-from flask import Flask, request
 from pyrogram import Client, filters
 
 # Configuración de la API
@@ -9,87 +7,50 @@ API_ID = 24738183  # Reemplaza con tu App API ID
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
 BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
 
-# Define el proxy manualmente
-PROXY = "http://130.61.171.71:80"  # Cambia esto por tu proxy real
-
-app = Flask(__name__)
-
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-def obtener_enlace(url):
-    command_yt_dlp = [
+async def download_video(url):
+    output_file = "video.mp4"  # Nombre del archivo de salida
+    command = [
         'yt-dlp',
-        '--proxy', PROXY,  # Usa el proxy definido
-        '-f', 'best',
-        '-g',
+        '-o', output_file,
         url
     ]
     try:
-        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        return output  # Regresa el enlace del flujo
+        subprocess.run(command, check=True)  # Ejecuta el comando de descarga
+        return output_file
     except subprocess.CalledProcessError as e:
-        print(f"Error al obtener el enlace: {e}")
+        print(f"Error al descargar el video: {e}")
         return None
 
-async def grabar_clip(url):
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
-    duration = 30  # Duración fija a 30 segundos
-
-    # Comando para grabar la transmisión usando FFmpeg
-    command_ffmpeg = [
-        'ffmpeg',
-        '-i', url,
-        '-t', str(duration),  # Duración fija a 30 segundos
-        '-c:v', 'copy',
-        '-c:a', 'copy',
-        output_file
-    ]
-
-    subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
-    return output_file
-
-@bot.on_message(filters.command('grabar'))
-async def handle_grabar(client, message):
-    await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
+@bot.on_message(filters.command('descargar'))
+async def handle_download(client, message):
+    await message.reply("Por favor, envía la URL del video de Google Drive.")
 
 @bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
-    url = message.text
-    await message.reply("Obteniendo enlace de transmisión...")
+    url = message.text.strip()
+    await message.reply("Descargando video de Google Drive...")
 
-    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
+    video_path = await download_video(url)  # Descarga el video
 
-    if flujo_url:
-        await message.reply("Grabando clip de 30 segundos...")
-        clip_path = await grabar_clip(flujo_url)  # Graba el clip
+    if video_path and os.path.exists(video_path):
+        await bot.send_video(message.chat.id, video_path)  # Envía el video a Telegram
+        await message.reply("Video enviado con éxito.")
         
-        if clip_path:
-            await bot.send_video(message.chat.id, clip_path)
-            await message.reply(f"Descarga completada: {flujo_url} (30 segundos)")
-            os.remove(clip_path)  # Elimina el clip después de enviarlo
-        else:
-            await message.reply("No se pudo grabar el clip.")
+        os.remove(video_path)  # Elimina el archivo del servidor
     else:
-        await message.reply("No se pudo obtener el enlace de la transmisión.")
+        await message.reply("No se pudo descargar el video.")
 
 @bot.on_message(filters.command('start'))
 async def send_welcome(client, message):
     welcome_message = (
         "¡Hola! Bienvenido a mi bot.\n\n"
         "Aquí están los comandos disponibles:\n"
-        "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
+        "/descargar - Descarga un video de Google Drive y lo envía al chat."
     )
     await message.reply(welcome_message)
 
-@app.route('/')
-def home():
-    return "Bot de Telegram en ejecución."
-
 # Ejecutar el bot
 if __name__ == '__main__':
-    bot.run()
-
-    threading.Thread(target=run_flask).start()
-    
-    # Ejecutar el bot de Telegram
     bot.run()
