@@ -1,11 +1,15 @@
 import subprocess
 import os
 from pyrogram import Client, filters
+from flask import Flask
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
 BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
+
+# Inicializa Flask
+app = Flask(__name__)
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -51,6 +55,13 @@ async def send_welcome(client, message):
     )
     await message.reply(welcome_message)
 
-# Ejecutar el bot
+# Ruta de prueba para Flask
+@app.route('/')
+def home():
+    return "El bot de Telegram está en funcionamiento."
+
+# Ejecutar el bot y Flask
 if __name__ == '__main__':
-    bot.run()
+    # Ejecutar el bot en un hilo separado
+    bot.run()  
+    app.run(host='0.0.0.0', port=8000)  # Cambia el puerto si es necesario
