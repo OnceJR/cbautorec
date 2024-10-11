@@ -1,45 +1,37 @@
 import subprocess
 import time
 import os
-import random
+from flask import Flask, request
 from pyrogram import Client, filters
-from flask import Flask
-import threading
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
 BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
 
+# Define el proxy manualmente
+PROXY = "http://130.61.171.71:80"  # Cambia esto por tu proxy real
+
 app = Flask(__name__)
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-def obtener_proxy():
-    """Selecciona un proxy aleatorio del archivo proxies.txt"""
-    with open('proxies.txt', 'r') as f:
-        proxies = f.readlines()
-    return random.choice(proxies).strip()
-
 def obtener_enlace(url):
-    """Obtiene el enlace de transmisión utilizando yt-dlp con un proxy"""
-    proxy = obtener_proxy()
     command_yt_dlp = [
         'yt-dlp',
-        '--proxy', proxy,  # Añadir el proxy seleccionado
+        '--proxy', PROXY,  # Usa el proxy definido
         '-f', 'best',
         '-g',
         url
     ]
     try:
         output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        return output
+        return output  # Regresa el enlace del flujo
     except subprocess.CalledProcessError as e:
-        print(f"Error al obtener el enlace con el proxy {proxy}: {e}")
+        print(f"Error al obtener el enlace: {e}")
         return None
 
 async def grabar_clip(url):
-    """Graba un clip de 30 segundos usando FFmpeg"""
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
     duration = 30  # Duración fija a 30 segundos
 
@@ -65,7 +57,7 @@ async def process_url(client, message):
     url = message.text
     await message.reply("Obteniendo enlace de transmisión...")
 
-    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo usando proxy
+    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
 
     if flujo_url:
         await message.reply("Grabando clip de 30 segundos...")
@@ -89,24 +81,14 @@ async def send_welcome(client, message):
     )
     await message.reply(welcome_message)
 
-# Definir una ruta de Flask para evitar el timeout
 @app.route('/')
-def index():
-    return "Bot de Telegram está funcionando."
+def home():
+    return "Bot de Telegram en ejecución."
 
-# Ejecutar el bot de Telegram y el servidor Flask
-def run_bot():
+# Ejecutar el bot
+if __name__ == '__main__':
     bot.run()
 
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-if __name__ == '__main__':
-    # Ejecutar ambas funciones en hilos separados
-    threading.Thread(target=run_bot).start()
-    threading.Thread(target=run_flask).start()
-
-    # Ejecutar Flask en un hilo separado
     threading.Thread(target=run_flask).start()
     
     # Ejecutar el bot de Telegram
