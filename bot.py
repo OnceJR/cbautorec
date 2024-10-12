@@ -3,6 +3,7 @@ import time
 import os
 from pyrogram import Client, filters
 from flask import Flask
+import threading  # Para ejecutar Flask en un hilo separado
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -18,6 +19,11 @@ app = Flask(__name__)
 def home():
     return "Bot is running"
 
+# Hilo separado para Flask
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# Función para obtener el enlace de transmisión con yt-dlp
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
@@ -32,6 +38,7 @@ def obtener_enlace(url):
         print(f"Error al obtener el enlace: {e}")
         return None
 
+# Función para grabar el clip con FFmpeg
 async def grabar_clip(url):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
     duration = 30  # Duración fija a 30 segundos
@@ -49,6 +56,7 @@ async def grabar_clip(url):
     subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
     return output_file
 
+# Manejadores de comandos y mensajes en Pyrogram
 @bot.on_message(filters.command('grabar'))
 async def handle_grabar(client, message):
     await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
@@ -84,6 +92,8 @@ async def send_welcome(client, message):
 
 # Ejecutar el bot y la app Flask con puerto "falso"
 if __name__ == '__main__':
-    bot.start()
-    app.run(host="0.0.0.0", port=8080)  # Puerto falso para mantener el bot activo en Render
-
+    # Inicia el servidor Flask en un hilo separado
+    threading.Thread(target=run_flask).start()
+    
+    # Inicia el bot
+    bot.run()
