@@ -2,6 +2,7 @@ import subprocess
 import time
 import os
 from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -40,10 +41,13 @@ async def process_url(client, message):
     url = message.text
     await message.reply("Obteniendo enlace de transmisión...")
 
-    # Enviar botones para seleccionar calidad
-    buttons = [
-        [("Alta", "alta"), ("Media", "media"), ("Baja", "baja")]
-    ]
+    # Crear botones para seleccionar calidad
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Alta", callback_data="alta"), 
+         InlineKeyboardButton("Media", callback_data="media"), 
+         InlineKeyboardButton("Baja", callback_data="baja")]
+    ])
+    
     await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
 
     # Guardar el enlace para usar más tarde
