@@ -1,10 +1,9 @@
 import asyncio
-import signal
 import os
 import psutil
+import signal
+import subprocess
 from pyrogram import Client, filters
-from flask import Flask
-from threading import Thread
 
 # Configuración del cliente de Pyrogram
 API_ID = 21660737
@@ -12,16 +11,6 @@ API_HASH = "610bd34454377eea7619977040c06c66"
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 
 app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# Configuración del servidor Flask
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-def home():
-    return "El bot está funcionando correctamente."
-
-def run_flask():
-    flask_app.run(host='0.0.0.0', port=8080)
 
 # Verificar uso de recursos
 def check_resource_usage():
@@ -37,32 +26,45 @@ def check_resource_usage():
         print("El uso de CPU es demasiado alto. Deteniendo el bot...")
         os.kill(os.getpid(), signal.SIGTERM)
 
-# Manejar el comando /start
-@app.on_message(filters.command("start"))
-async def start_command(client, message):
-    await message.reply_text("¡Hola! El bot está en funcionamiento.")
+# Función para grabar clip
+async def grabar_clip(url, chat_id):
+    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
+    duration = 30  # Duración del clip en segundos
 
-# Monitorear el uso de recursos en segundo plano
-async def monitor_resources():
-    while True:
-        check_resource_usage()
-        await asyncio.sleep(60)  # Verificar cada 60 segundos
+    # Comando para grabar la transmisión usando FFmpeg
+    command_ffmpeg = [
+        'ffmpeg',
+        '-i', url,
+        '-t', str(duration),
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        output_file
+    ]
+
+    try:
+        subprocess.run(command_ffmpeg, timeout=duration + 5)  # Timeout con un margen
+        with open(output_file, 'rb') as video_file:
+            await app.send_video(chat_id, video_file)
+        os.remove(output_file)  # Eliminar el clip después de enviarlo
+    except Exception as e:
+        await app.send_message(chat_id, f"Ocurrió un error al grabar el clip: {e}")
+
+# Manejar el comando /grabar
+@app.on_message(filters.command("grabar"))
+async def grabar_command(client, message):
+    await message.reply_text("Por favor, envía la URL de la transmisión de Chaturbate.")
+    await app.listen(message.chat.id, timeout=60)  # Escuchar por la URL
 
 # Evento para mantener el bot en ejecución
 stop_event = asyncio.Event()
 
 # Función principal de ejecución
 async def main():
-    # Iniciar el bot
     await app.start()
     print("Bot iniciado.")
-
-    # Iniciar el monitoreo de recursos
-    asyncio.create_task(monitor_resources())
-
-    # Mantener el bot en funcionamiento
     try:
-        await stop_event.wait()  # Esperar hasta que el evento sea activado
+        while not stop_event.is_set():
+            await asyncio.sleep(1)
     finally:
         await app.stop()
         print("Bot detenido.")
@@ -72,13 +74,6 @@ def shutdown(*args):
     stop_event.set()
 
 if __name__ == "__main__":
-    # Iniciar el servidor Flask en un hilo separado
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
-    
-    # Registrar las señales de interrupción
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
-    
-    # Ejecutar el loop principal de asyncio
     asyncio.run(main())
