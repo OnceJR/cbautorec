@@ -10,6 +10,9 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Usar un conjunto para almacenar los IDs de los chats que han recibido el mensaje de bienvenida
+chats_welcome_sent = set()
+
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
@@ -67,12 +70,14 @@ async def process_url(client, message):
 
 @bot.on_message(filters.command('start'))
 async def send_welcome(client, message):
-    welcome_message = (
-        "¡Hola! Bienvenido a mi bot.\n\n"
-        "Aquí están los comandos disponibles:\n"
-        "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
-    )
-    await message.reply(welcome_message)
+    if message.chat.id not in chats_welcome_sent:
+        welcome_message = (
+            "¡Hola! Bienvenido a mi bot.\n\n"
+            "Aquí están los comandos disponibles:\n"
+            "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
+        )
+        await message.reply(welcome_message)
+        chats_welcome_sent.add(message.chat.id)  # Agrega el ID del chat al conjunto
 
 # Ejecutar el bot
 if __name__ == '__main__':
