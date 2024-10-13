@@ -1,8 +1,8 @@
 import subprocess
 import time
 import os
+import requests
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -11,19 +11,14 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-def obtener_enlace(url):
-    command_yt_dlp = [
-        'yt-dlp',
-        '-f', 'best',
-        '-g',
-        url
-    ]
+def extraer_m3u8(url):
     try:
-        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        return output  # Regresa el enlace del flujo
-    except subprocess.CalledProcessError as e:
-        print(f"Error al obtener el enlace: {e}")
-        return None
+        response = requests.post("https://onlinetool.app/ext/m3u8_extractor", data={'url': url})
+        response.raise_for_status()  # Lanza un error si la solicitud falló
+        return response.json().get('links', [])
+    except Exception as e:
+        print(f"Error al extraer el enlace: {e}")
+        return []
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'  # Nombre del clip
@@ -39,41 +34,50 @@ async def grabar_clip(url, quality):
         output_file
     ]
 
-    subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
-    return output_file
+    try:
+        subprocess.run(command_ffmpeg, check=True)  # Ejecuta el comando de grabación
+        return output_file
+    except subprocess.CalledProcessError as e:
+        print(f"Error al grabar el clip: {e}")
+        return None
 
 @bot.on_message(filters.command('grabar'))
 async def handle_grabar(client, message):
     await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
 
-@bot.on_message(filters.text & ~filters.command("start"))
+@bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
     url = message.text
     await message.reply("Obteniendo enlace de transmisión...")
 
-    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
+    m3u8_links = extraer_m3u8(url)  # Obtiene los enlaces .m3u8
 
-    if flujo_url:
-        # Aquí puedes agregar más opciones de calidad
-        quality_options = [
-            InlineKeyboardButton("Calidad Alta", callback_data="high"),
-            InlineKeyboardButton("Calidad Media", callback_data="medium"),
-            InlineKeyboardButton("Calidad Baja", callback_data="low"),
-        ]
-        keyboard = InlineKeyboardMarkup([quality_options])
-        await message.reply("Selecciona la calidad del clip:", reply_markup=keyboard)
-        await message.delete()  # Elimina el mensaje para mantener el chat limpio
-    else:
-        await message.reply("No se pudo obtener el enlace de la transmisión.")
+    if not m3u8_links:
+        await message.reply("No se pudo obtener un enlace válido para grabar.")
+        return
+
+    # Enviar botones para seleccionar calidad
+    buttons = [
+        [("Alta", "alta"), ("Media", "media"), ("Baja", "baja")]
+    ]
+    await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
+
+    # Guardar el enlace para usar más tarde
+    client.data[message.chat.id] = m3u8_links  # Guardar los enlaces en un diccionario
 
 @bot.on_callback_query()
 async def handle_quality_selection(client, callback_query):
     quality = callback_query.data
     await callback_query.answer()  # Responde al callback
-    await callback_query.message.edit_text("Grabando clip...")  # Edita el mensaje para indicar que se está grabando
 
-    # Aquí puedes definir la lógica para obtener el enlace según la calidad seleccionada
-    flujo_url = obtener_enlace("URL_DE_TRANSMISION")  # Reemplaza con la lógica para obtener el enlace según calidad
+    # Obtiene los enlaces .m3u8 guardados
+    m3u8_links = client.data.get(callback_query.message.chat.id, [])
+    if not m3u8_links:
+        await callback_query.message.reply("No se encontró un enlace válido.")
+        return
+
+    flujo_url = m3u8_links[0]  # Usa el primer enlace extraído
+    await callback_query.message.edit_text("Grabando clip...")  # Edita el mensaje
 
     clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
 
