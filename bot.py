@@ -23,12 +23,6 @@ def home():
 def run_flask():
     flask_app.run(host='0.0.0.0', port=8080)
 
-# Función para manejar la señal SIGTERM
-async def shutdown(signal, loop):
-    print(f"Recibida señal de parada: {signal.name}. Apagando...")
-    await app.stop()
-    loop.stop()
-
 # Verificar uso de recursos
 def check_resource_usage():
     process = psutil.Process(os.getpid())
@@ -54,11 +48,6 @@ async def start_command(client, message):
 async def grabar_command(client, message):
     await message.reply_text("Por favor, envía la URL de la transmisión de Chaturbate.")
 
-# Función de grabación (ejemplo de función que podrías implementar)
-async def grabar_video(url):
-    # Lógica de grabación del video
-    pass
-
 # Monitorear el uso de recursos en segundo plano
 async def monitor_resources():
     while True:
@@ -67,11 +56,6 @@ async def monitor_resources():
 
 # Función principal de ejecución
 async def main():
-    # Configurar el manejo de señales
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s, loop)))
-
     # Iniciar el bot
     await app.start()
     print("Bot iniciado.")
@@ -79,12 +63,8 @@ async def main():
     # Iniciar el monitoreo de recursos
     asyncio.create_task(monitor_resources())
 
-    # Mantener el bot en funcionamiento manualmente
-    try:
-        while True:
-            await asyncio.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        print("Parando el bot...")
+    # Mantener el bot en funcionamiento
+    await app.idle()
 
 if __name__ == "__main__":
     # Iniciar el servidor Flask en un hilo separado
@@ -92,4 +72,9 @@ if __name__ == "__main__":
     flask_thread.start()
     
     # Ejecutar el loop principal de asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Parando el bot...")
+        asyncio.run(app.stop())
+        print("Bot detenido.")
