@@ -30,7 +30,6 @@ def check_resource_usage():
     cpu_usage = process.cpu_percent(interval=1)
     print(f"Uso de memoria: {mem_usage:.2f} MB, Uso de CPU: {cpu_usage:.2f}%")
 
-    # Si se supera un umbral de uso de recursos, detener el bot
     if mem_usage > 500:  # Umbral de memoria en MB
         print("El uso de memoria es demasiado alto. Deteniendo el bot...")
         os.kill(os.getpid(), signal.SIGTERM)
@@ -43,16 +42,14 @@ def check_resource_usage():
 async def start_command(client, message):
     await message.reply_text("¡Hola! El bot está en funcionamiento.")
 
-# Manejar el comando /grabar
-@app.on_message(filters.command("grabar"))
-async def grabar_command(client, message):
-    await message.reply_text("Por favor, envía la URL de la transmisión de Chaturbate.")
-
 # Monitorear el uso de recursos en segundo plano
 async def monitor_resources():
     while True:
         check_resource_usage()
         await asyncio.sleep(60)  # Verificar cada 60 segundos
+
+# Evento para mantener el bot en ejecución
+stop_event = asyncio.Event()
 
 # Función principal de ejecución
 async def main():
@@ -64,17 +61,24 @@ async def main():
     asyncio.create_task(monitor_resources())
 
     # Mantener el bot en funcionamiento
-    await app.idle()
+    try:
+        await stop_event.wait()  # Esperar hasta que el evento sea activado
+    finally:
+        await app.stop()
+        print("Bot detenido.")
+
+# Señal para detener el bot de manera segura
+def shutdown(*args):
+    stop_event.set()
 
 if __name__ == "__main__":
     # Iniciar el servidor Flask en un hilo separado
     flask_thread = Thread(target=run_flask)
     flask_thread.start()
     
+    # Registrar las señales de interrupción
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+    
     # Ejecutar el loop principal de asyncio
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        print("Parando el bot...")
-        asyncio.run(app.stop())
-        print("Bot detenido.")
+    asyncio.run(main())
