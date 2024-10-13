@@ -1,122 +1,91 @@
-import subprocess
-import time
+import asyncio
+import signal
 import os
-import logging
+import psutil
 from pyrogram import Client, filters
 from flask import Flask
-import threading  # Para ejecutar Flask en un hilo separado
+from threading import Thread
 
-# Configuración de la API
-API_ID = 24738183  # Reemplaza con tu App API ID
-API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
-BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
+# Configuración del cliente de Pyrogram
+API_ID = 21660737
+API_HASH = "610bd34454377eea7619977040c06c66"
+BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 
-bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Configurar logs
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Configuración del servidor Flask
+flask_app = Flask(__name__)
 
-# Aplicación Flask para mantener el puerto abierto
-app = Flask(__name__)
-
-@app.route('/')
+@flask_app.route('/')
 def home():
-    return "Bot is running"
+    return "El bot está funcionando correctamente."
 
-# Hilo separado para Flask
 def run_flask():
-    app.run(host="0.0.0.0", port=8080)
+    flask_app.run(host='0.0.0.0', port=8080)
 
-# Función para obtener el enlace de transmisión con yt-dlp
-def obtener_enlace(url):
-    command_yt_dlp = [
-        'yt-dlp',
-        '-f', 'best',
-        '-g',
-        url
-    ]
-    try:
-        logging.info(f"Ejecutando comando yt-dlp para obtener enlace de: {url}")
-        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        logging.info(f"Enlace obtenido: {output}")
-        return output  # Regresa el enlace del flujo
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error al obtener el enlace: {e}")
-        return None
+# Función para manejar la señal SIGTERM
+async def shutdown(signal, loop):
+    print(f"Recibida señal de parada: {signal.name}. Apagando...")
+    await app.stop()
+    loop.stop()
 
-# Función para grabar el clip con FFmpeg
-async def grabar_clip(url):
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
-    duration = 30  # Duración fija a 30 segundos
+# Verificar uso de recursos
+def check_resource_usage():
+    process = psutil.Process(os.getpid())
+    mem_usage = process.memory_info().rss / 1024 ** 2  # En MB
+    cpu_usage = process.cpu_percent(interval=1)
+    print(f"Uso de memoria: {mem_usage:.2f} MB, Uso de CPU: {cpu_usage:.2f}%")
 
-    # Comando para grabar la transmisión usando FFmpeg
-    command_ffmpeg = [
-        'ffmpeg',
-        '-i', url,
-        '-t', str(duration),  # Duración fija a 30 segundos
-        '-c:v', 'copy',
-        '-c:a', 'copy',
-        output_file
-    ]
+    # Si se supera un umbral de uso de recursos, detener el bot
+    if mem_usage > 500:  # Umbral de memoria en MB
+        print("El uso de memoria es demasiado alto. Deteniendo el bot...")
+        os.kill(os.getpid(), signal.SIGTERM)
+    if cpu_usage > 80:  # Umbral de uso de CPU en porcentaje
+        print("El uso de CPU es demasiado alto. Deteniendo el bot...")
+        os.kill(os.getpid(), signal.SIGTERM)
 
-    try:
-        logging.info(f"Iniciando grabación del clip de 30 segundos desde {url}")
-        subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
-        logging.info(f"Clip grabado en: {output_file}")
-        return output_file
-    except Exception as e:
-        logging.error(f"Error al grabar el clip: {e}")
-        return None
+# Manejar el comando /start
+@app.on_message(filters.command("start"))
+async def start_command(client, message):
+    await message.reply_text("¡Hola! El bot está en funcionamiento.")
 
-# Manejadores de comandos y mensajes en Pyrogram
-@bot.on_message(filters.command('grabar'))
-async def handle_grabar(client, message):
-    logging.info(f"Comando /grabar recibido de {message.from_user.id}")
-    await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
+# Manejar el comando /grabar
+@app.on_message(filters.command("grabar"))
+async def grabar_command(client, message):
+    await message.reply_text("Por favor, envía la URL de la transmisión de Chaturbate.")
 
-@bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
-async def process_url(client, message):
-    url = message.text
-    logging.info(f"URL recibida: {url} de {message.from_user.id}")
-    await message.reply("Obteniendo enlace de transmisión...")
+# Función de grabación (ejemplo de función que podrías implementar)
+async def grabar_video(url):
+    # Lógica de grabación del video
+    pass
 
-    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
+# Monitorear el uso de recursos en segundo plano
+async def monitor_resources():
+    while True:
+        check_resource_usage()
+        await asyncio.sleep(60)  # Verificar cada 60 segundos
 
-    if flujo_url:
-        await message.reply("Grabando clip de 30 segundos...")
-        clip_path = await grabar_clip(flujo_url)  # Graba el clip
-        
-        if clip_path:
-            try:
-                await bot.send_video(message.chat.id, clip_path)
-                logging.info(f"Clip enviado al chat: {message.chat.id}")
-                await message.reply(f"Descarga completada: {flujo_url} (30 segundos)")
-                os.remove(clip_path)  # Elimina el clip después de enviarlo
-                logging.info(f"Clip {clip_path} eliminado del servidor")
-            except Exception as e:
-                logging.error(f"Error al enviar el video a Telegram: {e}")
-        else:
-            logging.error("No se pudo grabar el clip.")
-            await message.reply("No se pudo grabar el clip.")
-    else:
-        logging.error("No se pudo obtener el enlace de la transmisión.")
-        await message.reply("No se pudo obtener el enlace de la transmisión.")
+# Función principal de ejecución
+async def main():
+    # Configurar el manejo de señales
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s, loop)))
 
-@bot.on_message(filters.command('start'))
-async def send_welcome(client, message):
-    logging.info(f"Comando /start recibido de {message.from_user.id}")
-    welcome_message = (
-        "¡Hola! Bienvenido a mi bot.\n\n"
-        "Aquí están los comandos disponibles:\n"
-        "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
-    )
-    await message.reply(welcome_message)
+    # Iniciar el bot
+    await app.start()
+    print("Bot iniciado.")
 
-# Ejecutar el bot y la app Flask con puerto "falso"
-if __name__ == '__main__':
-    # Inicia el servidor Flask en un hilo separado
-    threading.Thread(target=run_flask).start()
+    # Iniciar el monitoreo de recursos
+    asyncio.create_task(monitor_resources())
+
+    # Mantener el bot en funcionamiento
+    await app.idle()
+
+if __name__ == "__main__":
+    # Iniciar el servidor Flask en un hilo separado
+    flask_thread = Thread(target=run_flask)
+    flask_thread.start()
     
-    # Inicia el bot
-    logging.info("Iniciando el bot de Telegram")
-    bot.run()
+    # Ejecutar el loop principal de asyncio
+    asyncio.run(main())
