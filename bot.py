@@ -79,8 +79,12 @@ async def main():
     # Iniciar el monitoreo de recursos
     asyncio.create_task(monitor_resources())
 
-    # Mantener el bot en funcionamiento
-    await app.idle()
+    # Mantener el bot en funcionamiento manualmente
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except (KeyboardInterrupt, SystemExit):
+        print("Parando el bot...")
 
 if __name__ == "__main__":
     # Iniciar el servidor Flask en un hilo separado
