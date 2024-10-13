@@ -11,6 +11,9 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Diccionario para almacenar datos de los usuarios
+user_data = {}
+
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'  # Nombre del clip
     duration = 30  # Duración fija a 30 segundos
@@ -51,7 +54,7 @@ async def process_url(client, message):
     await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
 
     # Guardar el enlace para usar más tarde
-    client.data[message.chat.id] = url  # Guardar la URL en un diccionario
+    user_data[message.chat.id] = url  # Guardar la URL en el diccionario
 
 @bot.on_callback_query()
 async def handle_quality_selection(client, callback_query):
@@ -59,7 +62,7 @@ async def handle_quality_selection(client, callback_query):
     await callback_query.answer()  # Responde al callback
 
     # Obtiene la URL guardada
-    flujo_url = client.data.get(callback_query.message.chat.id)
+    flujo_url = user_data.get(callback_query.message.chat.id)
     if not flujo_url:
         await callback_query.message.reply("No se encontró un enlace válido.")
         return
