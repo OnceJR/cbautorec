@@ -1,8 +1,8 @@
-from pyrogram import Client, filters, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import subprocess
 import time
 import os
-import asyncio
 
 API_ID = 21660737
 API_HASH = "610bd34454377eea7619977040c06c66"
