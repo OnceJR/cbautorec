@@ -2,7 +2,7 @@ import subprocess
 import time
 import os
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -10,9 +10,6 @@ API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
 BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# Diccionario para almacenar datos de los usuarios
-user_data = {}
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'  # Nombre del clip
@@ -26,6 +23,7 @@ async def grabar_clip(url, quality):
         '-c:v', 'copy',
         '-c:a', 'copy',
         '-movflags', '+faststart',  # Para mejor presentación en la web
+        '-vf', 'thumbnail',  # Crea un thumbnail a partir del video
         output_file
     ]
 
@@ -45,35 +43,31 @@ async def process_url(client, message):
     url = message.text
     await message.reply("Obteniendo enlace de transmisión...")
 
-    # Crear botones para seleccionar calidad
+    flujo_url = url  # Aquí se debe obtener el enlace real de transmisión
+
+    # Botones para seleccionar calidad
     buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Alta", callback_data="alta"), 
-         InlineKeyboardButton("Media", callback_data="media"), 
-         InlineKeyboardButton("Baja", callback_data="baja")]
+        [
+            InlineKeyboardButton("Alta", callback_data="alta"),
+            InlineKeyboardButton("Media", callback_data="media"),
+            InlineKeyboardButton("Baja", callback_data="baja"),
+        ]
     ])
     
     await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
 
-    # Guardar el enlace para usar más tarde
-    user_data[message.chat.id] = url  # Guardar la URL en el diccionario
-
-@bot.on_callback_query()
+@bot.on_callback_query(filters.regex('^(alta|media|baja)$'))
 async def handle_quality_selection(client, callback_query):
     quality = callback_query.data
-    await callback_query.answer()  # Responde al callback
+    flujo_url = callback_query.message.reply_to_message.text  # Recupera la URL del mensaje anterior
+    await callback_query.answer()  # Acknowledge the callback query
 
-    # Obtiene la URL guardada
-    flujo_url = user_data.get(callback_query.message.chat.id)
-    if not flujo_url:
-        await callback_query.message.reply("No se encontró un enlace válido.")
-        return
-
-    await callback_query.message.edit_text("Grabando clip...")  # Edita el mensaje
-
+    await callback_query.message.reply("Grabando clip...")
     clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
 
     if clip_path:
-        await bot.send_video(callback_query.message.chat.id, clip_path, supports_streaming=True)  # Envía el video
+        with open(clip_path, 'rb') as video_file:
+            await bot.send_video(callback_query.message.chat.id, video_file)
         os.remove(clip_path)  # Elimina el clip después de enviarlo
     else:
         await callback_query.message.reply("No se pudo grabar el clip.")
