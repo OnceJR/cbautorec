@@ -11,6 +11,9 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# Diccionario para almacenar URLs por chat_id
+url_storage = {}
+
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'  # Nombre del clip
     duration = 30  # Duración fija a 30 segundos
@@ -41,6 +44,8 @@ async def handle_grabar(client, message):
 @bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
     url = message.text
+    url_storage[message.chat.id] = url  # Almacena la URL en el diccionario
+
     await message.reply("Obteniendo enlace de transmisión...")
 
     flujo_url = url  # Aquí se debe obtener el enlace real de transmisión
@@ -59,18 +64,21 @@ async def process_url(client, message):
 @bot.on_callback_query(filters.regex('^(alta|media|baja)$'))
 async def handle_quality_selection(client, callback_query):
     quality = callback_query.data
-    flujo_url = callback_query.message.reply_to_message.text  # Recupera la URL del mensaje anterior
+    flujo_url = url_storage.get(callback_query.message.chat.id)  # Recupera la URL del diccionario
     await callback_query.answer()  # Acknowledge the callback query
 
-    await callback_query.message.reply("Grabando clip...")
-    clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
+    if flujo_url:
+        await callback_query.message.reply("Grabando clip...")
+        clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
 
-    if clip_path:
-        with open(clip_path, 'rb') as video_file:
-            await bot.send_video(callback_query.message.chat.id, video_file)
-        os.remove(clip_path)  # Elimina el clip después de enviarlo
+        if clip_path:
+            with open(clip_path, 'rb') as video_file:
+                await bot.send_video(callback_query.message.chat.id, video_file)
+            os.remove(clip_path)  # Elimina el clip después de enviarlo
+        else:
+            await callback_query.message.reply("No se pudo grabar el clip.")
     else:
-        await callback_query.message.reply("No se pudo grabar el clip.")
+        await callback_query.message.reply("URL no encontrada. Por favor, envía una URL válida.")
 
 @bot.on_message(filters.command('start'))
 async def send_welcome(client, message):
