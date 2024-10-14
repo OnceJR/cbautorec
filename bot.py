@@ -2,10 +2,7 @@ import subprocess
 import time
 import os
 from aiogram import Bot, Dispatcher, types
-from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.dispatcher import FSMContext
-from aiogram.dispatcher import filters
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import F
 from aiogram.utils import executor
 
 # Configuración de la API
@@ -13,8 +10,7 @@ API_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
 
 # Inicialización del bot y el despachador
 bot = Bot(token=API_TOKEN)
-storage = MemoryStorage()
-dp = Dispatcher(bot, storage=storage)
+dp = Dispatcher()
 
 # Diccionario para almacenar datos de los usuarios
 user_data = {}
@@ -58,15 +54,15 @@ async def send_welcome(message: types.Message):
 async def handle_grabar(message: types.Message):
     await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
 
-@dp.message_handler(lambda message: not message.text.startswith('/'))
+@dp.message_handler(F.text & ~F.command())
 async def process_url(message: types.Message):
     url = message.text
     await message.reply("Obteniendo enlace de transmisión...")
 
-    buttons = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Alta", callback_data="alta"),
-         InlineKeyboardButton("Media", callback_data="media"),
-         InlineKeyboardButton("Baja", callback_data="baja")]
+    buttons = types.InlineKeyboardMarkup([
+        [types.InlineKeyboardButton("Alta", callback_data="alta"),
+         types.InlineKeyboardButton("Media", callback_data="media"),
+         types.InlineKeyboardButton("Baja", callback_data="baja")]
     ])
     
     await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
