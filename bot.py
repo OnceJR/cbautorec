@@ -14,7 +14,7 @@ bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 # Diccionario para almacenar datos de los usuarios y procesos de grabación
 user_data = {}
 recording_processes = {}
-monitoring_threads = {}
+monitoring_processes = {}
 
 def dividir_archivo(file_path, max_size=2 * 1024 * 1024 * 1024):  # 2 GB
     file_parts = []
@@ -39,7 +39,7 @@ def detener_grabacion(chat_id):
         return True
     return False
 
-async def grabar_completo(url, output_file):
+async def grabar_completo(url, output_file, thumbnail_file):
     command_ffmpeg = [
         'ffmpeg',
         '-i', url,
@@ -52,11 +52,21 @@ async def grabar_completo(url, output_file):
     ]
 
     process = subprocess.Popen(command_ffmpeg)
+    
+    # Extraer thumbnail
+    subprocess.run([
+        'ffmpeg',
+        '-i', output_file,
+        '-vf', 'thumbnail,scale=320:240',
+        '-frames:v', '1',
+        thumbnail_file
+    ], check=True)
+    
     return process
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
-    thumbnail_file = f'thumbnail_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
+    thumbnail_file = f'thumbnail_clip_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
     duration = 30
 
     command_ffmpeg = [
@@ -73,7 +83,7 @@ async def grabar_clip(url, quality):
 
     try:
         subprocess.run(command_ffmpeg, check=True)
-        subprocess.run([  # Genera el thumbnail
+        subprocess.run([
             'ffmpeg',
             '-i', output_file,
             '-vf', 'thumbnail,scale=320:240',
@@ -85,46 +95,39 @@ async def grabar_clip(url, quality):
         print(f"Error al grabar el clip: {e}")
         return None, None
 
-async def upload_video(chat_id, file_path):
+async def upload_video(chat_id, file_path, thumbnail_path):
     file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
     for part in file_parts:
         try:
-            await bot.send_file(chat_id, part, supports_streaming=True)
+            await bot.send_file(chat_id, part, thumb=thumbnail_path, supports_streaming=True)
             os.remove(part)
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
 
-async def monitorar_modelo(chat_id, url):
-    while True:
-        await bot.send_message(chat_id, "Verificando si la modelo está en línea...")
-        # Aquí deberías agregar el código para verificar si la modelo está en línea
-        # Si la modelo está en línea, comienza a grabar
-        modelo_en_linea = True  # Cambia esto según la verificación real
-        if modelo_en_linea:
-            await bot.send_message(chat_id, "La modelo está en línea. Comenzando grabación...")
-            output_file = f'completo_{chat_id}.mp4'
-            process = await grabar_completo(url, output_file)
-            recording_processes[chat_id] = process
-            break  # Salimos del bucle si comienza la grabación
-        await asyncio.sleep(60)  # Esperar un minuto antes de volver a verificar
+async def monitor_model(chat_id, url):
+    while chat_id in monitoring_processes:
+        try:
+            # Aquí deberías implementar la lógica para verificar si la modelo está en línea.
+            # Por ahora, simulo que está en línea.
+            modelo_en_linea = True  # Cambiar según la lógica real
 
-@bot.on(events.NewMessage(pattern='/monitorear'))
-async def handle_monitorear(event):
-    chat_id = event.chat_id
-    url = user_data.get(chat_id)
+            if modelo_en_linea:
+                await bot.send_message(chat_id, "La modelo está en línea. Comenzando grabación...")
+                output_file = f'completo_{chat_id}.mp4'
+                thumbnail_file = f'thumbnail_completo_{chat_id}.jpg'
+                process = await grabar_completo(url, output_file, thumbnail_file)
+                recording_processes[chat_id] = process
 
-    if not url:
-        await event.respond("Por favor, primero envía la URL de la transmisión usando el comando /grabar_completo.")
-        return
-
-    if chat_id in monitoring_threads:
-        await event.respond("Ya estás monitoreando a la modelo.")
-    else:
-        await event.respond("Comenzando a monitorear si la modelo está en línea...")
-        monitoring_thread = threading.Thread(target=asyncio.run, args=(monitorar_modelo(chat_id, url),))
-        monitoring_thread.start()
-        monitoring_threads[chat_id] = monitoring_thread
+                # Esperar a que el proceso termine
+                process.wait()
+                await upload_video(chat_id, output_file, thumbnail_file)
+                break
+            
+            await asyncio.sleep(60)  # Esperar un minuto antes de volver a verificar
+        except Exception as e:
+            print(f"Error en la monitorización: {e}")
+            break
 
 @bot.on(events.NewMessage(pattern='/grabar_clip'))
 async def handle_grabar_clip(event):
@@ -138,7 +141,7 @@ async def handle_grabar_completo(event):
 async def handle_detener(event):
     if detener_grabacion(event.chat_id):
         await event.respond("Grabación detenida. Subiendo el archivo...")
-        await upload_video(event.chat_id, f'completo_{event.chat_id}.mp4')
+        await upload_video(event.chat_id, f'completo_{event.chat_id}.mp4', f'thumbnail_completo_{event.chat_id}.jpg')
     else:
         await event.respond("No hay grabación en curso.")
 
@@ -173,14 +176,13 @@ async def handle_quality_selection(event):
         calidad_clip = calidad.split('_')[1]
         clip_path, thumbnail_path = await grabar_clip(flujo_url, calidad_clip)
         if clip_path and thumbnail_path:
-            await upload_video(chat_id, clip_path)
+            await upload_video(chat_id, clip_path, thumbnail_path)
         else:
             await event.respond("No se pudo grabar el clip.")
     elif calidad == 'completo':
-        await event.edit("Grabando transmisión completa...")
-        output_file = f'completo_{chat_id}.mp4'
-        process = await grabar_completo(flujo_url, output_file)
-        recording_processes[chat_id] = process
+        await event.edit("Comenzando a monitorizar el estado de la modelo...")
+        monitoring_processes[chat_id] = True
+        await monitor_model(chat_id, flujo_url)
 
 @bot.on(events.NewMessage(pattern='/start'))
 async def send_welcome(event):
@@ -188,8 +190,7 @@ async def send_welcome(event):
         "¡Hola! Aquí están los comandos disponibles:\n"
         "/grabar_clip - Graba un clip de 30 segundos.\n"
         "/grabar_completo - Graba la transmisión completa.\n"
-        "/detener - Detiene la grabación en curso.\n"
-        "/monitorear - Monitorea si la modelo está en línea y comienza a grabar automáticamente."
+        "/detener - Detiene la grabación en curso."
     )
 
 bot.start()
