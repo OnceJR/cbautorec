@@ -1,7 +1,8 @@
 import subprocess
 import os
 import time
-from pyrogram import Client, filters, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
