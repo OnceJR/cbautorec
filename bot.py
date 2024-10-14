@@ -23,10 +23,10 @@ async def grabar_clip(url, quality):
         'ffmpeg',
         '-i', url,
         '-t', str(duration),  # Duración fija a 30 segundos
-        '-c:v', 'copy',
-        '-c:a', 'copy',
-        '-movflags', '+faststart',  # Para mejor presentación en la web
         '-vf', 'thumbnail',  # Crea un thumbnail a partir del video
+        '-c:v', 'libx264',  # Codificar usando libx264
+        '-c:a', 'aac',      # Codificar audio en AAC
+        '-movflags', '+faststart',  # Para mejor presentación en la web
         output_file
     ]
 
