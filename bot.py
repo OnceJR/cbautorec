@@ -14,6 +14,7 @@ bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 # Diccionario para almacenar datos de los usuarios y procesos de grabación
 user_data = {}
 recording_processes = {}
+monitoring_threads = {}
 
 def dividir_archivo(file_path, max_size=2 * 1024 * 1024 * 1024):  # 2 GB
     file_parts = []
@@ -94,6 +95,37 @@ async def upload_video(chat_id, file_path):
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
 
+async def monitorar_modelo(chat_id, url):
+    while True:
+        await bot.send_message(chat_id, "Verificando si la modelo está en línea...")
+        # Aquí deberías agregar el código para verificar si la modelo está en línea
+        # Si la modelo está en línea, comienza a grabar
+        modelo_en_linea = True  # Cambia esto según la verificación real
+        if modelo_en_linea:
+            await bot.send_message(chat_id, "La modelo está en línea. Comenzando grabación...")
+            output_file = f'completo_{chat_id}.mp4'
+            process = await grabar_completo(url, output_file)
+            recording_processes[chat_id] = process
+            break  # Salimos del bucle si comienza la grabación
+        await asyncio.sleep(60)  # Esperar un minuto antes de volver a verificar
+
+@bot.on(events.NewMessage(pattern='/monitorear'))
+async def handle_monitorear(event):
+    chat_id = event.chat_id
+    url = user_data.get(chat_id)
+
+    if not url:
+        await event.respond("Por favor, primero envía la URL de la transmisión usando el comando /grabar_completo.")
+        return
+
+    if chat_id in monitoring_threads:
+        await event.respond("Ya estás monitoreando a la modelo.")
+    else:
+        await event.respond("Comenzando a monitorear si la modelo está en línea...")
+        monitoring_thread = threading.Thread(target=asyncio.run, args=(monitorar_modelo(chat_id, url),))
+        monitoring_thread.start()
+        monitoring_threads[chat_id] = monitoring_thread
+
 @bot.on(events.NewMessage(pattern='/grabar_clip'))
 async def handle_grabar_clip(event):
     await event.respond("Por favor, envía la URL de la transmisión para grabar un clip.")
@@ -156,7 +188,8 @@ async def send_welcome(event):
         "¡Hola! Aquí están los comandos disponibles:\n"
         "/grabar_clip - Graba un clip de 30 segundos.\n"
         "/grabar_completo - Graba la transmisión completa.\n"
-        "/detener - Detiene la grabación en curso."
+        "/detener - Detiene la grabación en curso.\n"
+        "/monitorear - Monitorea si la modelo está en línea y comienza a grabar automáticamente."
     )
 
 bot.start()
