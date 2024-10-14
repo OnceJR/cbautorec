@@ -2,6 +2,7 @@ import os
 import time
 import subprocess
 from telethon import TelegramClient, events
+from telethon import Button
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -60,7 +61,7 @@ async def process_url(event):
 
     # Crear botones para seleccionar calidad
     buttons = [
-        [("Alta", "alta"), ("Media", "media"), ("Baja", "baja")]
+        [Button.inline("Alta", b"alta"), Button.inline("Media", b"media"), Button.inline("Baja", b"baja")]
     ]
 
     await event.respond("Selecciona la calidad para grabar:", buttons=buttons)
