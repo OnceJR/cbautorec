@@ -4,3 +4,4 @@ yt-dlp
 ffmpeg-python
 psutil
 aiogram
+telethon
