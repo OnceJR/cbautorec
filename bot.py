@@ -1,93 +1,96 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import subprocess
 import time
 import os
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-API_ID = 21660737
-API_HASH = "610bd34454377eea7619977040c06c66"
-BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
+# Configuración de la API
+API_ID = 24738183  # Reemplaza con tu App API ID
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
+BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
 
-app = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-url_mapping = {}  # Mapa para almacenar URLs
+# Diccionario para almacenar datos de los usuarios
+user_data = {}
 
-def obtener_enlace(url):
-    command_yt_dlp = [
-        'yt-dlp',
-        '-f', 'best',
-        '-g',
-        url
-    ]
-    try:
-        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        return output  # Regresa el enlace del flujo
-    except subprocess.CalledProcessError as e:
-        print(f"Error al obtener el enlace: {e}")
-        return None
+async def grabar_clip(url, quality):
+    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'  # Nombre del clip
+    duration = 30  # Duración fija a 30 segundos
 
-def grabar_clip(url):
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
-    duration = 30  # Duración del clip en segundos
-
+    # Comando para grabar la transmisión usando FFmpeg
     command_ffmpeg = [
         'ffmpeg',
         '-i', url,
-        '-t', str(duration),
+        '-t', str(duration),  # Duración fija a 30 segundos
         '-c:v', 'copy',
         '-c:a', 'copy',
-        output_file,
-        '-vf', 'thumbnail'  # Filtra para crear un thumbnail
+        '-movflags', '+faststart',  # Para mejor presentación en la web
+        output_file
     ]
-    try:
-        subprocess.run(command_ffmpeg, timeout=duration + 5)  # Timeout con un margen
-        return output_file
-    except subprocess.TimeoutExpired:
-        pass  # Ignorar si se alcanza el tiempo de espera
 
-@app.on_message(filters.command("grabar"))
+    try:
+        subprocess.run(command_ffmpeg, check=True)  # Ejecuta el comando de grabación
+        return output_file
+    except subprocess.CalledProcessError as e:
+        print(f"Error al grabar el clip: {e}")
+        return None
+
+async def upload_video(chat_id, clip_path):
+    with open(clip_path, "rb") as video_file:
+        await bot.send_video(chat_id, video_file, supports_streaming=True)
+        os.remove(clip_path)  # Elimina el clip después de enviarlo
+
+@bot.on_message(filters.command('grabar'))
 async def handle_grabar(client, message):
     await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
-    await app.listen(message.chat.id, timeout=60)  # Escuchar por la URL
 
-@app.on_message(filters.text & filters.private)
+@bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
 async def process_url(client, message):
     url = message.text
-    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
+    await message.reply("Obteniendo enlace de transmisión...")
 
-    if flujo_url:
-        short_id = str(hash(flujo_url))  # Crear un identificador corto
-        url_mapping[short_id] = flujo_url  # Guardar la URL en el mapa
-        buttons = build_quality_buttons(short_id)
-        await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
-    else:
-        await message.reply("No se pudo obtener el enlace de la transmisión.")
+    # Crear botones para seleccionar calidad
+    buttons = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Alta", callback_data="alta"), 
+         InlineKeyboardButton("Media", callback_data="media"), 
+         InlineKeyboardButton("Baja", callback_data="baja")]
+    ])
+    
+    await message.reply("Selecciona la calidad para grabar:", reply_markup=buttons)
 
-def build_quality_buttons(short_id):
-    buttons = [
-        [InlineKeyboardButton("Baja", callback_data=f"low_{short_id}")],
-        [InlineKeyboardButton("Media", callback_data=f"medium_{short_id}")],
-        [InlineKeyboardButton("Alta", callback_data=f"high_{short_id}")]
-    ]
-    return InlineKeyboardMarkup(buttons)
+    # Guardar el enlace para usar más tarde
+    user_data[message.chat.id] = url  # Guardar la URL en el diccionario
 
-@app.on_callback_query(filters.regex(r'^(low|medium|high)_(\d+)$'))
+@bot.on_callback_query()
 async def handle_quality_selection(client, callback_query):
-    quality = callback_query.data.split('_')[0]
-    short_id = callback_query.data.split('_')[1]
-    flujo_url = url_mapping[short_id]  # Recupera la URL del diccionario
+    quality = callback_query.data
+    await callback_query.answer()  # Responde al callback
 
-    await callback_query.answer("Grabando clip...")
-    clip_path = grabar_clip(flujo_url)  # Graba el clip
+    # Obtiene la URL guardada
+    flujo_url = user_data.get(callback_query.message.chat.id)
+    if not flujo_url:
+        await callback_query.message.reply("No se encontró un enlace válido.")
+        return
+
+    await callback_query.message.edit_text("Grabando clip...")  # Edita el mensaje
+
+    clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
 
     if clip_path:
-        await client.send_video(callback_query.message.chat.id, clip_path)
-        os.remove(clip_path)  # Eliminar el clip después de enviarlo
+        await upload_video(callback_query.message.chat.id, clip_path)  # Envía el video
     else:
-        await callback_query.message.reply("Ocurrió un error al grabar el clip.")
+        await callback_query.message.reply("No se pudo grabar el clip.")
 
-@app.on_message(filters.command("start"))
+@bot.on_message(filters.command('start'))
 async def send_welcome(client, message):
-    await message.reply("¡Hola! Usa el comando /grabar para grabar un clip de 30 segundos de una transmisión de Chaturbate.")
+    welcome_message = (
+        "¡Hola! Bienvenido a mi bot.\n\n"
+        "Aquí están los comandos disponibles:\n"
+        "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
+    )
+    await message.reply(welcome_message)
 
-app.run()
+# Ejecutar el bot
+if __name__ == '__main__':
+    bot.run()
