@@ -1,3 +1,4 @@
+import re
 import subprocess
 import time
 import os
@@ -12,6 +13,11 @@ bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Diccionario para almacenar datos de los usuarios
 user_data = {}
+
+# Expresión regular para validar URLs
+url_pattern = re.compile(
+    r'^(https?://)?(www\.)?([a-zA-Z0-9-]+)\.[a-zA-Z]{2,6}(/[\w-./?%&=]*)?$'
+)
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
@@ -69,8 +75,9 @@ async def handle_grabar(event):
 
 @bot.on(events.NewMessage)
 async def process_url(event):
-    url = event.raw_text
-    if url.startswith("http"):
+    url = event.raw_text.strip()
+    if re.match(url_pattern, url):
+        # Si el mensaje coincide con el patrón de URL, procedemos
         user_data[event.chat_id] = url
         await event.respond(
             "Selecciona la calidad para grabar:",
@@ -79,6 +86,7 @@ async def process_url(event):
             ]
         )
     else:
+        # Si el mensaje no es una URL válida, informamos al usuario
         await event.respond("Por favor, envía un enlace de transmisión válido.")
 
 @bot.on(events.CallbackQuery)
