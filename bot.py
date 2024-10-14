@@ -72,7 +72,7 @@ async def grabar_clip(url, quality):
 
     try:
         subprocess.run(command_ffmpeg, check=True)
-        subprocess.run([
+        subprocess.run([  # Genera el thumbnail
             'ffmpeg',
             '-i', output_file,
             '-vf', 'thumbnail,scale=320:240',
