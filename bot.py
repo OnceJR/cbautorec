@@ -23,8 +23,10 @@ async def grabar_clip(url, quality):
         'ffmpeg',
         '-i', url,
         '-t', str(duration),
-        '-c:v', 'copy',
-        '-c:a', 'copy',
+        '-c:v', 'libx264',  # Usar codec H.264 para mayor compatibilidad
+        '-preset', 'fast',  # Ajuste de velocidad para procesamiento rápido
+        '-crf', '23',  # Calidad del video (ajustable)
+        '-c:a', 'aac',  # Codificación de audio
         '-movflags', '+faststart',  # Habilita el inicio rápido para streaming
         output_file
     ]
