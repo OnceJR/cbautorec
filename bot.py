@@ -25,6 +25,7 @@ async def grabar_clip(url, quality):
         '-t', str(duration),  # Duración fija a 30 segundos
         '-c:v', 'copy',
         '-c:a', 'copy',
+        '-movflags', '+faststart',  # Para mejor presentación en la web
         output_file
     ]
 
@@ -72,8 +73,7 @@ async def handle_quality_selection(client, callback_query):
     clip_path = await grabar_clip(flujo_url, quality)  # Graba el clip
 
     if clip_path:
-        await bot.send_video(callback_query.message.chat.id, clip_path)
-        await callback_query.message.reply(f"Descarga completada: {flujo_url} ({quality})")
+        await bot.send_video(callback_query.message.chat.id, clip_path, supports_streaming=True)  # Envía el video
         os.remove(clip_path)  # Elimina el clip después de enviarlo
     else:
         await callback_query.message.reply("No se pudo grabar el clip.")
