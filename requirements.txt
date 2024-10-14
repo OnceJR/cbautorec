@@ -3,3 +3,4 @@ flask
 yt-dlp
 ffmpeg-python
 psutil
+aiogram
