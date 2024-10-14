@@ -39,7 +39,7 @@ def detener_grabacion(chat_id):
         return True
     return False
 
-async def grabar_completo(url, output_file, thumbnail_file):
+async def grabar_completo(url, output_file):
     command_ffmpeg = [
         'ffmpeg',
         '-i', url,
@@ -53,20 +53,10 @@ async def grabar_completo(url, output_file, thumbnail_file):
 
     process = subprocess.Popen(command_ffmpeg)
     
-    # Extraer thumbnail
-    subprocess.run([
-        'ffmpeg',
-        '-i', output_file,
-        '-vf', 'thumbnail,scale=320:240',
-        '-frames:v', '1',
-        thumbnail_file
-    ], check=True)
-    
     return process
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
-    thumbnail_file = f'thumbnail_clip_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
     duration = 30
 
     command_ffmpeg = [
@@ -83,6 +73,9 @@ async def grabar_clip(url, quality):
 
     try:
         subprocess.run(command_ffmpeg, check=True)
+        
+        # Extraer thumbnail
+        thumbnail_file = f'thumbnail_clip_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
         subprocess.run([
             'ffmpeg',
             '-i', output_file,
@@ -90,6 +83,7 @@ async def grabar_clip(url, quality):
             '-frames:v', '1',
             thumbnail_file
         ], check=True)
+
         return output_file, thumbnail_file
     except subprocess.CalledProcessError as e:
         print(f"Error al grabar el clip: {e}")
@@ -115,12 +109,20 @@ async def monitor_model(chat_id, url):
             if modelo_en_linea:
                 await bot.send_message(chat_id, "La modelo está en línea. Comenzando grabación...")
                 output_file = f'completo_{chat_id}.mp4'
-                thumbnail_file = f'thumbnail_completo_{chat_id}.jpg'
-                process = await grabar_completo(url, output_file, thumbnail_file)
+                process = await grabar_completo(url, output_file)
                 recording_processes[chat_id] = process
 
                 # Esperar a que el proceso termine
                 process.wait()
+                thumbnail_file = f'thumbnail_completo_{chat_id}.jpg'
+                subprocess.run([
+                    'ffmpeg',
+                    '-i', output_file,
+                    '-vf', 'thumbnail,scale=320:240',
+                    '-frames:v', '1',
+                    thumbnail_file
+                ], check=True)
+                
                 await upload_video(chat_id, output_file, thumbnail_file)
                 break
             
