@@ -2,7 +2,6 @@ import subprocess
 import time
 import os
 from telethon import TelegramClient, events, Button
-from telethon.tl.custom import Button
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
@@ -26,7 +25,7 @@ async def grabar_clip(url, quality):
         '-t', str(duration),
         '-c:v', 'copy',
         '-c:a', 'copy',
-        '-movflags', '+faststart',
+        '-movflags', '+faststart',  # Habilita el inicio rápido para streaming
         output_file
     ]
 
@@ -50,14 +49,14 @@ async def grabar_clip(url, quality):
 
 async def upload_video(chat_id, clip_path, thumbnail_path):
     try:
-        # Envía el video con el thumbnail extraído
+        # Envía el video con el thumbnail extraído, habilitando supports_streaming=True
         await bot.send_file(
             chat_id,
             clip_path,
             thumb=thumbnail_path,
-            supports_streaming=True
+            supports_streaming=True  # Habilita la reproducción en streaming
         )
-        os.remove(clip_path)
+        os.remove(clip_path)  # Limpieza de archivos después del envío
         os.remove(thumbnail_path)
     except Exception as e:
         print(f"Error al enviar el video: {e}")
