@@ -47,7 +47,6 @@ async def grabar_completo(url, output_file):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
-        '-strict', 'experimental',
         output_file
     ]
 
@@ -67,7 +66,6 @@ async def grabar_clip(url, quality):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
-        '-strict', 'experimental',
         output_file
     ]
 
@@ -88,22 +86,16 @@ async def upload_video(chat_id, file_path):
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
 
-@bot.on(events.NewMessage(pattern='/grabar_clip'))
-async def handle_grabar_clip(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar un clip.")
-
-@bot.on(events.NewMessage(pattern='/grabar_completo'))
-async def handle_grabar_completo(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar la transmisión completa.")
-
-@bot.on(events.NewMessage(pattern='/detener'))
-async def handle_detener(event):
-    if detener_grabacion(event.chat_id):
-        await event.respond("Grabación detenida. Subiendo el archivo...")
-        output_file = f'completo_{event.chat_id}.mp4'
-        await upload_video(event.chat_id, output_file)
-    else:
-        await event.respond("No hay grabación en curso.")
+@bot.on(events.NewMessage(pattern='/start'))
+async def send_welcome(event):
+    await event.respond(
+        "¡Hola! Selecciona una opción para comenzar:",
+        buttons=[
+            [Button.inline("Grabar Clip", b'grabar_clip')],
+            [Button.inline("Grabar Completo", b'grabar_completo')],
+            [Button.inline("Ver Progreso", b'ver_progreso')]
+        ]
+    )
 
 @bot.on(events.NewMessage)
 async def process_url(event):
@@ -113,7 +105,7 @@ async def process_url(event):
     if url.startswith("http"):
         user_data[chat_id] = url
         if chat_id in recording_processes:
-            await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
+            await event.respond("Ya hay una grabación en curso. Usa el botón de detener para finalizarla.")
         else:
             await event.respond(
                 "Selecciona la calidad o tipo de grabación:",
@@ -137,6 +129,7 @@ async def handle_quality_selection(event):
         clip_path = await grabar_clip(flujo_url, calidad_clip)
         if clip_path:
             await upload_video(chat_id, clip_path)
+            await event.delete()
         else:
             await event.respond("No se pudo grabar el clip.")
     elif calidad == 'completo':
@@ -144,15 +137,8 @@ async def handle_quality_selection(event):
         output_file = f'completo_{chat_id}.mp4'
         process = await grabar_completo(flujo_url, output_file)
         recording_processes[chat_id] = process
+        await event.delete()
 
-@bot.on(events.NewMessage(pattern='/start'))
-async def send_welcome(event):
-    await event.respond(
-        "¡Hola! Aquí están los comandos disponibles:\n"
-        "/grabar_clip - Graba un clip de 30 segundos.\n"
-        "/grabar_completo - Graba la transmisión completa.\n"
-        "/detener - Detiene la grabación en curso."
-    )
-
-bot.start()
-bot.run_until_disconnected()
+    elif calidad == 'ver_progreso':
+        # Enviar una nota para mostrar el progreso
+        await event.respond("Actualmente no se está realizando ninguna acción.")
