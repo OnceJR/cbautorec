@@ -1,7 +1,6 @@
 import subprocess
 import time
 import os
-import threading
 from telethon import TelegramClient, events, Button
 
 # Configuración de la API
@@ -55,7 +54,6 @@ async def grabar_completo(url, output_file):
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
-    thumbnail_file = f'thumbnail_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
     duration = 30
 
     command_ffmpeg = [
@@ -72,25 +70,19 @@ async def grabar_clip(url, quality):
 
     try:
         subprocess.run(command_ffmpeg, check=True)
-        subprocess.run([
-            'ffmpeg',
-            '-i', output_file,
-            '-vf', 'thumbnail,scale=320:240',
-            '-frames:v', '1',
-            thumbnail_file
-        ], check=True)
-        return output_file, thumbnail_file
+        return output_file
     except subprocess.CalledProcessError as e:
         print(f"Error al grabar el clip: {e}")
-        return None, None
+        return None
 
 async def upload_video(chat_id, file_path):
     file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
     for part in file_parts:
         try:
-            await bot.send_file(chat_id, part, supports_streaming=True)
-            os.remove(part)
+            with open(part, "rb") as video_file:
+                await bot.send_video(chat_id=chat_id, video=video_file, supports_streaming=True)
+            os.remove(part)  # Elimina la parte después de enviarla
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
 
@@ -111,11 +103,11 @@ async def handle_detener(event):
         await event.respond("No hay grabación en curso.")
 
 @bot.on(events.NewMessage)
-async def process_url(event):
+async def process_message(event):
     url = event.raw_text
     chat_id = event.chat_id
 
-    if url.startswith("http"):
+    if url.startswith("http://") or url.startswith("https://"):
         user_data[chat_id] = url
         if chat_id in recording_processes:
             await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
@@ -128,7 +120,9 @@ async def process_url(event):
                 ]
             )
     else:
-        await event.respond("Por favor, envía un enlace de transmisión válido.")
+        # Responder solo si no es un comando
+        if not url.startswith('/'):
+            await event.respond("Por favor, envía un enlace de transmisión válido o usa uno de los comandos disponibles.")
 
 @bot.on(events.CallbackQuery)
 async def handle_quality_selection(event):
@@ -138,9 +132,8 @@ async def handle_quality_selection(event):
 
     if calidad.startswith('clip'):
         await event.edit("Grabando clip...")
-        calidad_clip = calidad.split('_')[1]
-        clip_path, thumbnail_path = await grabar_clip(flujo_url, calidad_clip)
-        if clip_path and thumbnail_path:
+        clip_path = await grabar_clip(flujo_url, calidad.split('_')[1])
+        if clip_path:
             await upload_video(chat_id, clip_path)
         else:
             await event.respond("No se pudo grabar el clip.")
