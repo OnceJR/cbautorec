@@ -1,6 +1,7 @@
 import subprocess
 import time
 import os
+import threading
 from telethon import TelegramClient, events, Button
 
 # Configuración de la API
@@ -37,21 +38,6 @@ def detener_grabacion(chat_id):
         return True
     return False
 
-async def generar_thumbnail(video_path):
-    thumbnail_path = f'{os.path.splitext(video_path)[0]}_thumbnail.jpg'
-    try:
-        subprocess.run([
-            'ffmpeg',
-            '-i', video_path,
-            '-vf', 'thumbnail,scale=320:240',
-            '-frames:v', '1',
-            thumbnail_path
-        ], check=True)
-        return thumbnail_path
-    except subprocess.CalledProcessError as e:
-        print(f"Error al generar el thumbnail: {e}")
-        return None
-
 async def grabar_completo(url, output_file):
     command_ffmpeg = [
         'ffmpeg',
@@ -61,6 +47,7 @@ async def grabar_completo(url, output_file):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
+        '-strict', 'experimental',
         output_file
     ]
 
@@ -80,23 +67,23 @@ async def grabar_clip(url, quality):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
+        '-strict', 'experimental',
         output_file
     ]
 
     try:
         subprocess.run(command_ffmpeg, check=True)
-        thumbnail_path = await generar_thumbnail(output_file)
-        return output_file, thumbnail_path
+        return output_file
     except subprocess.CalledProcessError as e:
         print(f"Error al grabar el clip: {e}")
-        return None, None
+        return None
 
-async def upload_video(chat_id, file_path, thumbnail_path=None):
+async def upload_video(chat_id, file_path):
     file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
     for part in file_parts:
         try:
-            await bot.send_file(chat_id, part, supports_streaming=True, thumb=thumbnail_path)
+            await bot.send_file(chat_id, part, supports_streaming=True)
             os.remove(part)
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
@@ -112,10 +99,9 @@ async def handle_grabar_completo(event):
 @bot.on(events.NewMessage(pattern='/detener'))
 async def handle_detener(event):
     if detener_grabacion(event.chat_id):
-        await event.respond("Grabación detenida. Generando thumbnail y subiendo el archivo...")
+        await event.respond("Grabación detenida. Subiendo el archivo...")
         output_file = f'completo_{event.chat_id}.mp4'
-        thumbnail = await generar_thumbnail(output_file)
-        await upload_video(event.chat_id, output_file, thumbnail)
+        await upload_video(event.chat_id, output_file)
     else:
         await event.respond("No hay grabación en curso.")
 
@@ -148,9 +134,9 @@ async def handle_quality_selection(event):
     if calidad.startswith('clip'):
         await event.edit("Grabando clip...")
         calidad_clip = calidad.split('_')[1]
-        clip_path, thumbnail_path = await grabar_clip(flujo_url, calidad_clip)
-        if clip_path and thumbnail_path:
-            await upload_video(chat_id, clip_path, thumbnail_path)
+        clip_path = await grabar_clip(flujo_url, calidad_clip)
+        if clip_path:
+            await upload_video(chat_id, clip_path)
         else:
             await event.respond("No se pudo grabar el clip.")
     elif calidad == 'completo':
