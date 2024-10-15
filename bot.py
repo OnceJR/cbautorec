@@ -47,7 +47,6 @@ async def grabar_completo(url, output_file):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
-        '-f', 'mp4',  # Forzar el formato de salida a MP4
         output_file
     ]
 
@@ -68,7 +67,6 @@ async def grabar_clip(url, quality):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
-        '-f', 'mp4',  # Forzar el formato de salida a MP4
         output_file
     ]
 
@@ -113,11 +111,11 @@ async def handle_detener(event):
         await event.respond("No hay grabación en curso.")
 
 @bot.on(events.NewMessage)
-async def process_message(event):
+async def process_url(event):
     url = event.raw_text
     chat_id = event.chat_id
 
-    if url.startswith("http://") or url.startswith("https://"):
+    if url.startswith("http"):
         user_data[chat_id] = url
         if chat_id in recording_processes:
             await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
@@ -130,9 +128,7 @@ async def process_message(event):
                 ]
             )
     else:
-        # Responder solo si no es un comando
-        if not url.startswith('/'):
-            await event.respond("Por favor, envía un enlace de transmisión válido o usa uno de los comandos disponibles.")
+        await event.respond("Por favor, envía un enlace de transmisión válido.")
 
 @bot.on(events.CallbackQuery)
 async def handle_quality_selection(event):
