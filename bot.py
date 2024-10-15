@@ -47,6 +47,7 @@ async def grabar_completo(url, output_file):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
+        '-f', 'mp4',  # Forzar el formato de salida a MP4
         output_file
     ]
 
@@ -67,6 +68,7 @@ async def grabar_clip(url, quality):
         '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
+        '-f', 'mp4',  # Forzar el formato de salida a MP4
         output_file
     ]
 
