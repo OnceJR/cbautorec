@@ -1,7 +1,6 @@
 import subprocess
 import time
 import os
-import threading
 from telethon import TelegramClient, events, Button
 
 # Configuración de la API
@@ -92,12 +91,12 @@ async def grabar_clip(url, quality):
         print(f"Error al grabar el clip: {e}")
         return None, None
 
-async def upload_video(chat_id, file_path):
+async def upload_video(chat_id, file_path, thumbnail_path=None):
     file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
     for part in file_parts:
         try:
-            await bot.send_file(chat_id, part, supports_streaming=True)
+            await bot.send_file(chat_id, part, supports_streaming=True, thumb=thumbnail_path)
             os.remove(part)
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
@@ -116,11 +115,7 @@ async def handle_detener(event):
         await event.respond("Grabación detenida. Generando thumbnail y subiendo el archivo...")
         output_file = f'completo_{event.chat_id}.mp4'
         thumbnail = await generar_thumbnail(output_file)
-        await upload_video(event.chat_id, output_file)
-        if thumbnail:
-            await bot.send_file(event.chat_id, thumbnail)
-        else:
-            await event.respond("No se pudo generar el thumbnail.")
+        await upload_video(event.chat_id, output_file, thumbnail)
     else:
         await event.respond("No hay grabación en curso.")
 
@@ -155,8 +150,7 @@ async def handle_quality_selection(event):
         calidad_clip = calidad.split('_')[1]
         clip_path, thumbnail_path = await grabar_clip(flujo_url, calidad_clip)
         if clip_path and thumbnail_path:
-            await upload_video(chat_id, clip_path)
-            await bot.send_file(chat_id, thumbnail_path)
+            await upload_video(chat_id, clip_path, thumbnail_path)
         else:
             await event.respond("No se pudo grabar el clip.")
     elif calidad == 'completo':
