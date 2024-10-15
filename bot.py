@@ -38,6 +38,21 @@ def detener_grabacion(chat_id):
         return True
     return False
 
+async def generar_thumbnail(video_path):
+    thumbnail_path = f'{os.path.splitext(video_path)[0]}_thumbnail.jpg'
+    try:
+        subprocess.run([
+            'ffmpeg',
+            '-i', video_path,
+            '-vf', 'thumbnail,scale=320:240',
+            '-frames:v', '1',
+            thumbnail_path
+        ], check=True)
+        return thumbnail_path
+    except subprocess.CalledProcessError as e:
+        print(f"Error al generar el thumbnail: {e}")
+        return None
+
 async def grabar_completo(url, output_file):
     command_ffmpeg = [
         'ffmpeg',
@@ -55,7 +70,6 @@ async def grabar_completo(url, output_file):
 
 async def grabar_clip(url, quality):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
-    thumbnail_file = f'thumbnail_{time.strftime("%Y%m%d_%H%M%S")}.jpg'
     duration = 30
 
     command_ffmpeg = [
@@ -72,14 +86,8 @@ async def grabar_clip(url, quality):
 
     try:
         subprocess.run(command_ffmpeg, check=True)
-        subprocess.run([
-            'ffmpeg',
-            '-i', output_file,
-            '-vf', 'thumbnail,scale=320:240',
-            '-frames:v', '1',
-            thumbnail_file
-        ], check=True)
-        return output_file, thumbnail_file
+        thumbnail_path = await generar_thumbnail(output_file)
+        return output_file, thumbnail_path
     except subprocess.CalledProcessError as e:
         print(f"Error al grabar el clip: {e}")
         return None, None
@@ -105,8 +113,14 @@ async def handle_grabar_completo(event):
 @bot.on(events.NewMessage(pattern='/detener'))
 async def handle_detener(event):
     if detener_grabacion(event.chat_id):
-        await event.respond("Grabación detenida. Subiendo el archivo...")
-        await upload_video(event.chat_id, f'completo_{event.chat_id}.mp4')
+        await event.respond("Grabación detenida. Generando thumbnail y subiendo el archivo...")
+        output_file = f'completo_{event.chat_id}.mp4'
+        thumbnail = await generar_thumbnail(output_file)
+        await upload_video(event.chat_id, output_file)
+        if thumbnail:
+            await bot.send_file(event.chat_id, thumbnail)
+        else:
+            await event.respond("No se pudo generar el thumbnail.")
     else:
         await event.respond("No hay grabación en curso.")
 
@@ -142,6 +156,7 @@ async def handle_quality_selection(event):
         clip_path, thumbnail_path = await grabar_clip(flujo_url, calidad_clip)
         if clip_path and thumbnail_path:
             await upload_video(chat_id, clip_path)
+            await bot.send_file(chat_id, thumbnail_path)
         else:
             await event.respond("No se pudo grabar el clip.")
     elif calidad == 'completo':
