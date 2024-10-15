@@ -1,7 +1,6 @@
 import subprocess
 import time
 import os
-import threading
 from telethon import TelegramClient, events, Button
 
 # Configuración de la API
@@ -138,7 +137,12 @@ async def handle_quality_selection(event):
         process = await grabar_completo(flujo_url, output_file)
         recording_processes[chat_id] = process
         await event.delete()
-
     elif calidad == 'ver_progreso':
-        # Enviar una nota para mostrar el progreso
         await event.respond("Actualmente no se está realizando ninguna acción.")
+
+# Iniciar el cliente de Telegram
+bot.start()
+print("El bot está en funcionamiento...")
+
+# Ejecutar el bucle principal
+bot.run_until_disconnected()
