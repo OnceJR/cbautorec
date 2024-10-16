@@ -84,12 +84,16 @@ async def grabar_clip(url, quality, duration=30):
 
 async def upload_video(chat_id, file_path):
     """Sube el video al chat especificado, dividiéndolo si es necesario."""
-    file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
+    file_parts = dividir_archivo(
+        file_path) if os.path.getsize(
+            file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
     for part in file_parts:
         try:
             with open(part, "rb") as video_file:
-                await bot.send_video(chat_id=chat_id, video=video_file, supports_streaming=True)
+                await bot.send_video(chat_id=chat_id,
+                                     video=video_file,
+                                     supports_streaming=True)
             os.remove(part)  # Elimina la parte después de enviarla
         except Exception as e:
             print(f"Error al enviar el archivo: {e}")
@@ -97,14 +101,6 @@ async def upload_video(chat_id, file_path):
     # Eliminar el archivo original después de dividirlo y enviar las partes
     if len(file_parts) > 1:
         os.remove(file_path)  # Movido dentro del bloque if
-
-@bot.on(events.NewMessage(pattern='/grabar_clip'))
-async def handle_grabar_clip(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar un clip.")
-
-@bot.on(events.NewMessage(pattern='/grabar_completo'))
-async def handle_grabar_completo(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar la transmisión completa.")
 
 @bot.on(events.NewMessage(pattern='/detener'))
 async def handle_detener(event):
@@ -123,18 +119,18 @@ async def process_message(event):
     if url.startswith("http://") or url.startswith("https://"):
         user_data[chat_id] = url
         if chat_id in recording_processes:
-            await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
-        else:
             await event.respond(
-                "Selecciona el tipo de grabación:",
-                buttons=[
-                    [Button.inline("Clip", b'clip'), Button.inline("Completo", b'completo')]
-                ]
-            )
+                "Ya hay una grabación en curso. Usa /detener para finalizarla.")
+        else:
+            await event.respond("Selecciona el tipo de grabación:",
+                                 buttons=[
+                                     [Button.inline("Clip", b'clip'),
+                                      Button.inline("Completo", b'completo')]
+                                 ])
     else:
         # Responder solo si no es un comando
         if not url.startswith('/'):
-            await event.respond("Por favor, envía un enlace de transmisión válido o usa uno de los comandos disponibles.")
+            await event.respond("Por favor, envía un enlace de transmisión válido.")
 
 @bot.on(events.CallbackQuery)
 async def handle_quality_selection(event):
@@ -163,11 +159,8 @@ async def handle_quality_selection(event):
 async def send_welcome(event):
     """Envía un mensaje de bienvenida con los comandos disponibles."""
     await event.respond(
-        "¡Hola! Aquí están los comandos disponibles:\n"
-        "/grabar_clip - Graba un clip de 30 segundos.\n"
-        "/grabar_completo - Graba la transmisión completa.\n"
-        "/detener - Detiene la grabación en curso."
-    )
+        "¡Hola! Simplemente envía un enlace de transmisión para comenzar a grabar.\n"
+        "Puedes usar /detener para detener la grabación en curso.")
 
 bot.start()
 bot.run_until_disconnected()
