@@ -38,23 +38,33 @@ async def grabar_video(evento, url, duracion=None):
   comando_ffmpeg = [
       'ffmpeg',
       '-i', url,
-      '-c copy',  # Copiar códecs de la transmisión original si es posible
+      '-c copy',
       ffmpeg_config[calidad]
   ]
 
   if duracion:
     comando_ffmpeg.extend(['-t', str(duracion)])
 
-  with open(archivo_salida, 'wb') as salida:
-    proceso_ffmpeg = subprocess.Popen(comando_ffmpeg, stdout=salida, stderr=subprocess.PIPE)
+  try:
+    # Crear el proceso ffmpeg de forma asíncrona
+    proceso_ffmpeg = await asyncio.create_subprocess_exec(
+        *comando_ffmpeg,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+
     await evento.respond("Grabando video...")
-    try:
-      await asyncio.wait_for(proceso_ffmpeg.wait(), timeout=3600)  # Timeout de 1 hora
-    except asyncio.TimeoutError:
-      proceso_ffmpeg.terminate()
-      await evento.respond("Error: Tiempo de grabación excedido.")
-    finally:
-      grabando = False
+
+    # Esperar a que el proceso termine con un timeout
+    stdout, stderr = await asyncio.wait_for(proceso_ffmpeg.communicate(), timeout=3600)
+
+    if proceso_ffmpeg.returncode != 0:
+      await evento.respond(f"Error al grabar el video: {stderr.decode()}")
+  except asyncio.TimeoutError:
+    proceso_ffmpeg.terminate()
+    await evento.respond("Error: Tiempo de grabación excedido.")
+  finally:
+    grabando = False
 
 async def dividir_archivo(nombre_archivo):
   """Divide un archivo grande en partes de 2GB."""
