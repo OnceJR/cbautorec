@@ -84,23 +84,21 @@ async def grabar_clip(url, quality, duration=30):
 
 async def upload_video(chat_id, file_path):
     """Sube el video al chat especificado, dividiéndolo si es necesario."""
-    file_parts = dividir_archivo(
-        file_path) if os.path.getsize(
-            file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
+    file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
 
-    for part in file_parts:
-        try:
+    try:
+        for part in file_parts:
             with open(part, "rb") as video_file:
-                await bot.send_video(chat_id=chat_id,
-                                     video=video_file,
-                                     supports_streaming=True)
-            os.remove(part)  # Elimina la parte después de enviarla
-        except Exception as e:
-            print(f"Error al enviar el archivo: {e}")
+                await bot.send_video(chat_id=chat_id, video=video_file, supports_streaming=True)
+    except Exception as e:
+        print(f"Error al enviar el archivo: {e}")
+    finally:
+        for part in file_parts:
+            os.remove(part)  
 
     # Eliminar el archivo original después de dividirlo y enviar las partes
     if len(file_parts) > 1:
-        os.remove(file_path)  # Movido dentro del bloque if
+        os.remove(file_path)
 
 @bot.on(events.NewMessage(pattern='/detener'))
 async def handle_detener(event):
@@ -119,8 +117,7 @@ async def process_message(event):
     if url.startswith("http://") or url.startswith("https://"):
         user_data[chat_id] = url
         if chat_id in recording_processes:
-            await event.respond(
-                "Ya hay una grabación en curso. Usa /detener para finalizarla.")
+            await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
         else:
             await event.respond("Selecciona el tipo de grabación:",
                                  buttons=[
@@ -158,9 +155,8 @@ async def handle_quality_selection(event):
 @bot.on(events.NewMessage(pattern='/start'))
 async def send_welcome(event):
     """Envía un mensaje de bienvenida con los comandos disponibles."""
-    await event.respond(
-        "¡Hola! Simplemente envía un enlace de transmisión para comenzar a grabar.\n"
-        "Puedes usar /detener para detener la grabación en curso.")
+    await event.respond("¡Hola! Simplemente envía un enlace de transmisión para comenzar a grabar.\n"
+                         "Puedes usar /detener para detener la grabación en curso.")
 
 bot.start()
 bot.run_until_disconnected()
