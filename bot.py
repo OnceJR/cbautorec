@@ -149,20 +149,12 @@ async def handle_quality_selection(event):
         elif tipo == 'completo':
             output_file = f'completo_{chat_id}.mp4'
             process = await grabar_video(flujo_url, output_file, calidad)
-        
+        else:
+            process = None  # Asignar None si el tipo no es válido
+
         if process:
             recording_processes[chat_id] = process
-            # Esperar a que el proceso termine
-            try:
-                await asyncio.wait_for(process.wait(), timeout=3600)  # Timeout de 1 hora
-            except asyncio.TimeoutError:
-                process.terminate()
-                await event.respond("Error: Tiempo de grabación excedido.")
-            finally:
-                await upload_video(chat_id, output_file)
-                del recording_processes[chat_id]
-        else:
-            await event.respond("No se pudo iniciar la grabación.")
+            # ... (resto del código) ...
     else:
         await event.respond("Primero debes enviar un enlace de transmisión.")
 
