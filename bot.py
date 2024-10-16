@@ -22,8 +22,7 @@ grabando = False
 proceso_ffmpeg = None
 archivo_salida = None
 calidad = 'media'  # Calidad por defecto
-tipo_grabacion = None  # Clip o Completo
-enlaces_usuarios = {}  # Diccionario para almacenar los enlaces de los usuarios
+
 
 async def grabar_video(evento, url, duracion=None):
   global grabando, proceso_ffmpeg, archivo_salida, calidad
@@ -38,7 +37,7 @@ async def grabar_video(evento, url, duracion=None):
   comando_ffmpeg = [
       'ffmpeg',
       '-i', url,
-      '-c copy',
+      '-c copy',  # Copiar códecs de la transmisión original si es posible
       ffmpeg_config[calidad]
   ]
 
@@ -61,10 +60,12 @@ async def grabar_video(evento, url, duracion=None):
     if proceso_ffmpeg.returncode != 0:
       await evento.respond(f"Error al grabar el video: {stderr.decode()}")
   except asyncio.TimeoutError:
-    proceso_ffmpeg.terminate()
+    if proceso_ffmpeg:
+      proceso_ffmpeg.terminate()
     await evento.respond("Error: Tiempo de grabación excedido.")
   finally:
     grabando = False
+
 
 async def dividir_archivo(nombre_archivo):
   """Divide un archivo grande en partes de 2GB."""
@@ -80,6 +81,7 @@ async def dividir_archivo(nombre_archivo):
         f_parte.write(parte)
       indice_parte += 1
   os.remove(nombre_archivo)  # Eliminar el archivo original
+
 
 async def subir_video(evento):
   global archivo_salida
@@ -105,76 +107,40 @@ async def subir_video(evento):
   except Exception as e:
     await evento.respond(f"Error al subir el video: {e}")
 
+
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(evento):
   await evento.respond(
       "¡Hola! Soy un bot para grabar transmisiones en vivo. "
-      "Aquí tienes una lista de comandos:\n\n"
-      "/grabar_clip - Graba un clip de 30 segundos.\n"
-      "/grabar_completo - Graba la transmisión completa.\n"
-      "/detener - Detiene la grabación y sube el video.\n\n"
-      "Por favor, envía un enlace de transmisión para comenzar.",
+      "Por favor, elige la calidad de grabación y envía el enlace de la transmisión.",
       buttons=[
-          [Button.url('Chaturbate', 'https://chaturbate.com')]
+          [Button.inline("Alta", data=b'alta')],
+          [Button.inline("Media", data=b'media')]
       ]
   )
 
-@bot.on(events.NewMessage(pattern='/grabar_clip'))
-async def grabar_clip(evento):
-  global tipo_grabacion
-  tipo_grabacion = 'clip'
-  await evento.respond(
-      "Elige la calidad del clip:",
-      buttons=[
-          Button.inline("Alta", data=b'alta'),
-          Button.inline("Media", data=b'media')
-      ]
-  )
-
-@bot.on(events.NewMessage(pattern='/grabar_completo'))
-async def grabar_completo(evento):
-  global tipo_grabacion
-  tipo_grabacion = 'completo'
-  await evento.respond(
-      "Elige la calidad de la grabación:",
-      buttons=[
-          Button.inline("Alta", data=b'alta'),
-          Button.inline("Media", data=b'media')
-      ]
-  )
 
 @bot.on(events.CallbackQuery)
 async def manejar_calidad(evento):
-  global calidad, tipo_grabacion, enlaces_usuarios
+  global calidad
   calidad = evento.data.decode('utf-8')
   await evento.answer("Calidad seleccionada.")
-
-  usuario_id = evento.sender_id
-  if usuario_id not in enlaces_usuarios:
-    await evento.edit("Primero envía el enlace de la transmisión.")
-    return
-
-  enlace = enlaces_usuarios[usuario_id]
-  if tipo_grabacion == 'clip':
-    await grabar_video(evento, enlace, duracion=30)
-  elif tipo_grabacion == 'completo':
-    await grabar_video(evento, enlace)
-
-  tipo_grabacion = None
-  del enlaces_usuarios[usuario_id]  # Eliminar el enlace después de usarlo
+  await evento.edit("Ahora envía el enlace de la transmisión (opcionalmente seguido de la duración en segundos para grabar un clip).")
 
 
 @bot.on(events.NewMessage)
 async def manejar_enlace(evento):
-  global tipo_grabacion, enlaces_usuarios
+  global calidad
   mensaje = evento.message.text
-  # Expresión regular para validar enlaces HTTP/HTTPS
-  if re.match(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)', mensaje):
-    enlaces_usuarios[evento.sender_id] = mensaje
-    if not tipo_grabacion:
-      await evento.respond("Primero selecciona /grabar_clip o /grabar_completo")
-  elif not evento.message.text.startswith('/'):  # Ignorar comandos
-    await evento.respond("Por favor, envía un enlace válido.")
+  # Expresión regular para validar enlaces HTTP/HTTPS con duración opcional
+  match = re.match(r'https?:\/\/(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*) ?(\d+)?', mensaje)
+  if match:
+    url, duracion = match.groups()
+    duracion = int(duracion) if duracion else None
+    await grabar_video(evento, url, duracion=duracion)
+  elif not evento.message.text.startswith('/'):
+    await evento.respond("Por favor, envía un enlace válido (opcionalmente seguido de la duración en segundos para grabar un clip).")
+
 
 @bot.on(events.NewMessage(pattern='/detener'))
 async def detener_grabacion(evento):
@@ -183,8 +149,10 @@ async def detener_grabacion(evento):
     await evento.respond("No se está grabando ningún video.")
     return
 
-  proceso_ffmpeg.terminate()
+  if proceso_ffmpeg:
+    proceso_ffmpeg.terminate()
   grabando = False
   await subir_video(evento)
+
 
 bot.run_until_disconnected()
