@@ -41,17 +41,16 @@ def detener_grabacion(chat_id):
 
 async def grabar_completo(url, output_file):
     """Graba la transmisión completa en un archivo."""
-command_ffmpeg = [
-    'ffmpeg',
-    '-i', url,
-    '-t', str(duration),
-    '-c:v', 'libx264',
-    '-preset', 'fast',
-    '-crf', '23',  # Space added here
-    '-c:a', 'aac',
-    '-movflags', '+faststart',
-    output_file
-]
+    command_ffmpeg = [
+        'ffmpeg',
+        '-i', url,
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', '23',
+        '-c:a', 'aac',
+        '-movflags', '+faststart',
+        output_file
+    ]
 
     try:
         process = subprocess.Popen(command_ffmpeg)
@@ -70,7 +69,7 @@ async def grabar_clip(url, quality, duration=30):
         '-t', str(duration),
         '-c:v', 'libx264',
         '-preset', 'fast',
-        '-crf' '23',  # Ajustar para la calidad (menor valor = mejor calidad)
+        '-crf', '23',  # Espacio añadido aquí
         '-c:a', 'aac',
         '-movflags', '+faststart',
         output_file
