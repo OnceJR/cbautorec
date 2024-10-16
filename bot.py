@@ -1,162 +1,196 @@
 import asyncio
+import logging
+import re
 import subprocess
-import time
 import os
-from telethon import TelegramClient, events, Button
+import glob
+from telethon import TelegramClient, events
+from telethon.tl.types import InputMediaUploadedDocument
+import yt_dlp
 
-# Configuración de la API
-API_ID = 24738183  # Reemplaza con tu App API ID
-API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
-BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
+# Configuración de logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
+# Credenciales de la API de Telethon
+API_ID = 24738183
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
+BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
+
+# Inicializar el cliente de Telegram
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Diccionario para almacenar datos de los usuarios y procesos de grabación
-user_data = {}
-recording_processes = {}
+# Diccionario para almacenar las grabaciones activas
+grabaciones_activas = {}
 
-def dividir_archivo(file_path, max_size=2 * 1024 * 1024 * 1024):  # 2 GB
-    file_parts = []
-    file_size = os.path.getsize(file_path)
-    part_num = 1
-
-    with open(file_path, 'rb') as f:
-        while f.tell() < file_size:
-            part_path = f"{file_path}.part{part_num}"
-            with open(part_path, 'wb') as part_file:
-                part_file.write(f.read(max_size))
-            file_parts.append(part_path)
-            part_num += 1
-
-    return file_parts
-
-def detener_grabacion(chat_id):
-    process = recording_processes.get(chat_id)
-    if process:
-        try:
-            process.terminate()
-            del recording_processes[chat_id]
-            return True
-        except Exception as e:
-            print(f"Error al detener la grabación: {e}")
-    return False
-
-async def grabar_video(url, output_file, quality="media", duration=None):
-    # Configuración de ffmpeg para calidad Alta y Media
-    ffmpeg_config = {
-        'alta': '-c:v libx264 -crf 20 -preset veryfast -c:a aac -b:a 128k',
-        'media': '-c:v libx264 -crf 28 -preset superfast -c:a aac -b:a 96k'
+async def obtener_url_stream(url, calidad):
+    """Obtiene la URL de la transmisión en vivo con yt-dlp."""
+    ydl_opts = {
+        'format': f'bestvideo[height<={calidad}]+bestaudio/best[height<={calidad}]',
+        'quiet': True
     }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        return info['url']
 
-    command_ffmpeg = [
-        'ffmpeg',
-        '-i', url,
-        '-c copy',  # Copiar códecs de la transmisión original si es posible
-        ffmpeg_config[quality]
-    ]
-
-    if duration:
-        command_ffmpeg.extend(['-t', str(duration)])
-
-    command_ffmpeg.append(output_file)
-
+async def grabar_clip(chat_id, url, calidad):
+    """Graba un clip de 30 segundos de la transmisión en vivo."""
     try:
-        process = await asyncio.create_subprocess_exec(
-            *command_ffmpeg,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        return process
+        # Obtener la URL de la transmisión
+        stream_url = await obtener_url_stream(url, calidad)
+
+        # Comando ffmpeg para grabar un clip de 30 segundos
+        comando = f'ffmpeg -i "{stream_url}" -c copy -t 30 clip.mp4'
+
+        # Ejecutar el comando ffmpeg
+        proceso = await asyncio.create_subprocess_shell(comando)
+        await proceso.wait()
+
+        # Enviar el clip a Telegram
+        await enviar_video(chat_id, "clip.mp4")
     except Exception as e:
-        print(f"Error al iniciar la grabación: {e}")
-        return None
+        logger.error(f"Error al grabar clip: {e}")
+        await bot.send_message(chat_id, f"Error al grabar el clip: {e}")
 
-async def upload_video(chat_id, file_path):
-    file_parts = dividir_archivo(file_path) if os.path.getsize(file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
+async def grabar_completo(chat_id, url, calidad):
+    """Graba la transmisión en vivo completa."""
+    try:
+        # Obtener la URL de la transmisión
+        stream_url = await obtener_url_stream(url, calidad)
 
-    for part in file_parts:
-        try:
-            await bot.send_file(chat_id, part, supports_streaming=True)
-            os.remove(part)  # Elimina la parte después de enviarla
-        except Exception as e:
-            print(f"Error al enviar el archivo: {e}")
+        # Comando ffmpeg para grabar la transmisión completa
+        comando = f'ffmpeg -i "{stream_url}" -c copy grabacion_completa.mp4'
+
+        # Ejecutar el comando ffmpeg
+        proceso = await asyncio.create_subprocess_shell(comando)
+        grabaciones_activas[chat_id] = proceso
+        await proceso.wait()
+
+        # Enviar la grabación completa a Telegram
+        await enviar_video(chat_id, "grabacion_completa.mp4")
+        del grabaciones_activas[chat_id]
+    except Exception as e:
+        logger.error(f"Error al grabar la transmisión completa: {e}")
+        await bot.send_message(chat_id, f"Error al grabar la transmisión completa: {e}")
+
+async def detener_grabacion(chat_id):
+    """Detiene la grabación en curso."""
+    try:
+        if chat_id in grabaciones_activas:
+            proceso = grabaciones_activas[chat_id]
+            proceso.terminate()
+            del grabaciones_activas[chat_id]
+            await bot.send_message(chat_id, "Grabación detenida.")
+        else:
+            await bot.send_message(chat_id, "No hay ninguna grabación en curso.")
+    except Exception as e:
+        logger.error(f"Error al detener la grabación: {e}")
+        await bot.send_message(chat_id, f"Error al detener la grabación: {e}")
+
+async def enviar_video(chat_id, nombre_archivo):
+    """Envía el video a Telegram, dividiéndolo si es necesario."""
+    try:
+        # Obtener el tamaño del archivo
+        tamano_archivo = os.path.getsize(nombre_archivo)
+
+        # Si el archivo es mayor a 2 GB, dividirlo en partes
+        if tamano_archivo > 2 * 1024 * 1024 * 1024:
+            await bot.send_message(chat_id, "El archivo es demasiado grande. Dividiendo en partes...")
+            await dividir_y_enviar_video(chat_id, nombre_archivo)
+        else:
+            # Enviar el video a Telegram
+            async with bot.action(chat_id, 'document'):
+                await bot.send_file(
+                    chat_id,
+                    nombre_archivo,
+                    supports_streaming=True,
+                    caption=f"Aquí está tu video: {nombre_archivo}"
+                )
+    except Exception as e:
+        logger.error(f"Error al enviar el video: {e}")
+        await bot.send_message(chat_id, f"Error al enviar el video: {e}")
+
+async def dividir_y_enviar_video(chat_id, nombre_archivo):
+    """Divide el video en partes y las envía a Telegram."""
+    try:
+        # Comando ffmpeg para dividir el video
+        comando = f'ffmpeg -i "{nombre_archivo}" -c copy -fs 2G -f segment "parte_%03d.mp4"'
+
+        # Ejecutar el comando ffmpeg
+        proceso = await asyncio.create_subprocess_shell(comando)
+        await proceso.wait()
+
+        # Enviar las partes a Telegram
+        async with bot.action(chat_id, 'document'):
+            for archivo in glob.glob("parte_*.mp4"):
+                await bot.send_file(
+                    chat_id,
+                    archivo,
+                    supports_streaming=True,
+                    caption=f"Parte del video: {archivo}"
+                )
+    except Exception as e:
+        logger.error(f"Error al dividir y enviar el video: {e}")
+        await bot.send_message(chat_id, f"Error al dividir y enviar el video: {e}")
 
 @bot.on(events.NewMessage(pattern='/start'))
-async def send_welcome(event):
-    await event.respond(
-        "¡Hola! Aquí están los comandos disponibles:\n"
-        "/grabar_clip - Graba un clip de 30 segundos.\n"
-        "/grabar_completo - Graba la transmisión completa.\n"
-        "/detener - Detiene la grabación en curso."
-    )
+async def start(event):
+    """Envía un mensaje de bienvenida cuando se inicia el bot."""
+    await event.respond("Hola! Soy un bot que puede grabar transmisiones en vivo. Usa /grabar_clip, /grabar_completo o /detener para interactuar conmigo.")
 
 @bot.on(events.NewMessage(pattern='/grabar_clip'))
-async def handle_grabar_clip(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar un clip.")
+async def grabar_clip_handler(event):
+    """Maneja el comando /grabar_clip."""
+    try:
+        # Obtener la URL de la transmisión del mensaje
+        url = re.search(r'(https?://[^\s]+)', event.message.text).group(1)
+
+        # Preguntar por la calidad de la grabación
+        await event.respond("¿Qué calidad deseas? (Ejemplo: 720, 1080)")
+
+        @bot.on(events.NewMessage(from_users=event.sender_id))
+        async def obtener_calidad(event):
+            try:
+                calidad = int(event.message.text)
+                await event.respond("Grabando clip...")
+                await grabar_clip(event.chat_id, url, calidad)
+            except ValueError:
+                await event.respond("Calidad inválida. Por favor, ingresa un número.")
+            finally:
+                bot.remove_event_handler(obtener_calidad)
+
+    except AttributeError:
+        await event.respond("Por favor, proporciona una URL válida.")
 
 @bot.on(events.NewMessage(pattern='/grabar_completo'))
-async def handle_grabar_completo(event):
-    await event.respond("Por favor, envía la URL de la transmisión para grabar la transmisión completa.")
+async def grabar_completo_handler(event):
+    """Maneja el comando /grabar_completo."""
+    try:
+        # Obtener la URL de la transmisión del mensaje
+        url = re.search(r'(https?://[^\s]+)', event.message.text).group(1)
+
+        # Preguntar por la calidad de la grabación
+        await event.respond("¿Qué calidad deseas? (Ejemplo: 720, 1080)")
+
+        @bot.on(events.NewMessage(from_users=event.sender_id))
+        async def obtener_calidad(event):try:
+                calidad = int(event.message.text)
+                await event.respond("Grabando transmisión completa...")
+                await grabar_completo(event.chat_id, url, calidad)
+            except ValueError:
+                await event.respond("Calidad inválida. Por favor, ingresa un número.")
+            finally:
+                bot.remove_event_handler(obtener_calidad)
+
+    except AttributeError:
+        await event.respond("Por favor, proporciona una URL válida.")
 
 @bot.on(events.NewMessage(pattern='/detener'))
-async def handle_detener(event):
-    if detener_grabacion(event.chat_id):
-        await event.respond("Grabación detenida.")
-        # Asegúrate de que el archivo existe antes de intentar subirlo
-        output_file = f'completo_{event.chat_id}.mp4'
-        if os.path.exists(output_file):
-            await event.respond("Subiendo el archivo...")
-            await upload_video(event.chat_id, output_file)
-        else:
-            await event.respond("No se encontró ningún archivo para subir.")
-    else:
-        await event.respond("No hay grabación en curso.")
+async def detener_grabacion_handler(event):
+    """Maneja el comando /detener."""
+    await detener_grabacion(event.chat_id)
 
-@bot.on(events.NewMessage)
-async def process_message(event):
-    url = event.raw_text
-    chat_id = event.chat_id
-
-    if url.startswith("http://") or url.startswith("https://"):
-        user_data[chat_id] = url
-        if chat_id in recording_processes:
-            await event.respond("Ya hay una grabación en curso. Usa /detener para finalizarla.")
-        else:
-            await event.respond(
-                "Selecciona la calidad o tipo de grabación:",
-                buttons=[
-                    [Button.inline("Clip Alta", b'clip_alta'), Button.inline("Clip Media", b'clip_media')],
-                    [Button.inline("Completo Alta", b'completo_alta'), Button.inline("Completo Media", b'completo_media')]
-                ]
-            )
-    else:
-        # Responder solo si no es un comando
-        if not url.startswith('/'):
-            await event.respond("Por favor, envía un enlace de transmisión válido o usa uno de los comandos disponibles.")
-
-@bot.on(events.CallbackQuery)
-async def handle_quality_selection(event):
-    global recording_processes
-    calidad, tipo = event.data.decode('utf-8').split('_')
-    chat_id = event.chat_id
-    flujo_url = user_data.get(chat_id)
-
-    if flujo_url:
-        await event.edit(f"Grabando {tipo} en calidad {calidad}...")
-        if tipo == 'clip':
-            output_file = f'clip_{chat_id}.mp4'
-            process = await grabar_video(flujo_url, output_file, calidad, duration=30)
-        elif tipo == 'completo':
-            output_file = f'completo_{chat_id}.mp4'
-            process = await grabar_video(flujo_url, output_file, calidad)
-        else:
-            process = None  # Asignar None si el tipo no es válido
-
-        if process:
-            recording_processes[chat_id] = process
-            # ... (resto del código) ...
-    else:
-        await event.respond("Primero debes enviar un enlace de transmisión.")
-
-bot.start()
-bot.run_until_disconnected()
+# Iniciar el bot
+if __name__ == '__main__':
+    logger.info("Bot iniciado.")
+    bot.run_until_disconnected()
