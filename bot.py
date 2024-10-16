@@ -1,7 +1,7 @@
-import logging
 import os
 import subprocess
 import time
+import logging
 
 from telethon import TelegramClient, events, Button
 
@@ -12,25 +12,13 @@ BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu
 
 bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
-# Configurar logs (opcional)
+# Configurar logs
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Diccionario para almacenar datos de los usuarios y procesos de grabación
 user_data = {}
 recording_processes = {}
-
-def obtener_enlace(url):
-    """Obtiene el enlace de transmisión con yt-dlp."""
-    command_yt_dlp = ['yt-dlp', '-f', 'best', '-g', url]
-    try:
-        logging.info(f"Ejecutando comando yt-dlp para obtener enlace de: {url}")
-        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
-        logging.info(f"Enlace obtenido: {output}")
-        return output  # Regresa el enlace del flujo
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error al obtener el enlace: {e}")
-        return None
 
 def dividir_archivo(file_path, max_size=2 * 1024 * 1024 * 1024):  # 2 GB
     """Divide un archivo en partes más pequeñas si supera el tamaño máximo."""
@@ -63,14 +51,8 @@ def detener_grabacion(chat_id):
 async def grabar_completo(url, output_file):
     """Graba la transmisión completa en un archivo."""
     command_ffmpeg = [
-        'ffmpeg',
-        '-i', url,
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '23',
-        '-c:a', 'aac',
-        '-movflags', '+faststart',
-        output_file
+        'ffmpeg', '-i', url, '-c:v', 'libx264', '-preset', 'fast', '-crf',
+        '23', '-c:a', 'aac', '-movflags', '+faststart', output_file
     ]
 
     try:
@@ -85,15 +67,9 @@ async def grabar_clip(url, quality, duration=30):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
 
     command_ffmpeg = [
-        'ffmpeg',
-        '-i', url,
-        '-t', str(duration),
-        '-c:v', 'libx264',
-        '-preset', 'fast',
-        '-crf', '23',
-        '-c:a', 'aac',
-        '-movflags', '+faststart',
-        output_file
+        'ffmpeg', '-i', url, '-t', str(duration), '-c:v', 'libx264',
+        '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-movflags',
+        '+faststart', output_file
     ]
 
     try:
@@ -111,6 +87,7 @@ async def upload_video(chat_id, file_path):
 
     try:
         for part in file_parts:
+            logging.info(f"Subiendo archivo a Telegram: {part}")  # Log de subida
             with open(part, "rb") as video_file:
                 await bot.send_video(chat_id=chat_id,
                                      video=video_file,
@@ -172,16 +149,10 @@ async def handle_quality_selection(event):
         if tipo_grabacion == 'clip':
             await event.edit("Grabando clip de 30 segundos...")
 
-            # Obtener enlace de transmisión con yt-dlp
-            flujo_url = obtener_enlace(flujo_url)
-            if not flujo_url:
-                await event.respond("No se pudo obtener el enlace de la transmisión.")
-                return
-
             clip_path = await grabar_clip(flujo_url, "estandar")  # Calidad estándar por defecto
             if clip_path:
                 await upload_video(chat_id, clip_path)
-                await event.respond(f"Descarga completada: {flujo_url} (30 segundos)")
+                await event.respond(f"Descarga completada (30 segundos)")
             else:
                 await event.respond("No se pudo grabar el clip.")
 
