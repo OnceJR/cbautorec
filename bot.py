@@ -81,10 +81,6 @@ async def grabar_clip(url, quality, duration=30):
     except subprocess.CalledProcessError as e:
         print(f"Error al grabar el clip: {e}")
         return None
-    finally:
-        # Eliminar el archivo original en caso de error o éxito
-        if os.path.exists(output_file):
-            os.remove(output_file)
 
 async def upload_video(chat_id, file_path):
     """Sube el video al chat especificado, dividiéndolo si es necesario."""
@@ -100,7 +96,7 @@ async def upload_video(chat_id, file_path):
 
     # Eliminar el archivo original después de dividirlo y enviar las partes
     if len(file_parts) > 1:
-        os.remove(file_path)
+        os.remove(file_path)  # Movido dentro del bloque if
 
 @bot.on(events.NewMessage(pattern='/grabar_clip'))
 async def handle_grabar_clip(event):
