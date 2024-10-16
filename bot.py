@@ -69,7 +69,7 @@ async def grabar_clip(url, quality, duration=30):
         '-t', str(duration),
         '-c:v', 'libx264',
         '-preset', 'fast',
-        '-crf', '23',  # Espacio añadido aquí
+        '-crf', '23',
         '-c:a', 'aac',
         '-movflags', '+faststart',
         output_file
