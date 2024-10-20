@@ -32,7 +32,7 @@ def run_flask():
 def obtener_enlace(url):
     command_yt_dlp = [
         'yt-dlp',
-        '--cookies', '/ruta/a/cookies.txt',  # Ruta a tu archivo de cookies
+        '--cookies', 'chaturbate_cookies.txt',  # Ruta a tu archivo de cookies
         '--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36',
         '-f', 'best',
         '-g',
