@@ -1,183 +1,122 @@
-import os
 import subprocess
 import time
+import os
 import logging
-
-from telethon import TelegramClient, events, Button
+from pyrogram import Client, filters
+from flask import Flask
+import threading  # Para ejecutar Flask en un hilo separado
 
 # Configuración de la API
 API_ID = 24738183  # Reemplaza con tu App API ID
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
 BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
 
-bot = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+bot = Client("my_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
 # Configurar logs
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Diccionario para almacenar datos de los usuarios y procesos de grabación
-user_data = {}
-recording_processes = {}
+# Aplicación Flask para mantener el puerto abierto
+app = Flask(__name__)
 
-def dividir_archivo(file_path, max_size=2 * 1024 * 1024 * 1024):  # 2 GB
-    """Divide un archivo en partes más pequeñas si supera el tamaño máximo."""
-    file_parts = []
-    file_size = os.path.getsize(file_path)
-    part_num = 1
+@app.route('/')
+def home():
+    return "Bot is running"
 
-    with open(file_path, 'rb') as f:
-        while f.tell() < file_size:
-            part_path = f"{file_path}_part{part_num}.mp4"
-            with open(part_path, 'wb') as part_file:
-                data = f.read(max_size)  # Leer el bloque de datos
-                if not data:  # Salir del bucle si no hay más datos
-                    break
-                part_file.write(data)
-            file_parts.append(part_path)
-            part_num += 1
+# Hilo separado para Flask
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
 
-    return file_parts
-
-def detener_grabacion(chat_id):
-    """Detiene la grabación en curso para el chat_id dado."""
-    process = recording_processes.get(chat_id)
-    if process and process.poll() is None:
-        process.terminate()
-        del recording_processes[chat_id]
-        return True
-    return False
-
-async def grabar_completo(url, output_file):
-    """Graba la transmisión completa en un archivo."""
-    command_ffmpeg = [
-        'ffmpeg', '-i', url, '-c:v', 'libx264', '-preset', 'fast', '-crf',
-        '23', '-c:a', 'aac', '-movflags', '+faststart', output_file
+# Función para obtener el enlace de transmisión con yt-dlp
+def obtener_enlace(url):
+    command_yt_dlp = [
+        'yt-dlp',
+        '-f', 'best',
+        '-g',
+        url
     ]
-
     try:
-        process = subprocess.Popen(command_ffmpeg)
-        return process
-    except Exception as e:
-        print(f"Error al iniciar la grabación: {e}")
-        return None
-
-async def grabar_clip(url, quality, duration=30):
-    """Graba un clip de la transmisión con la duración especificada."""
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}_{quality}.mp4'
-
-    command_ffmpeg = [
-        'ffmpeg', '-i', url, '-t', str(duration), '-c:v', 'libx264',
-        '-preset', 'fast', '-crf', '23', '-c:a', 'aac', '-movflags',
-        '+faststart', output_file
-    ]
-
-    try:
-        subprocess.run(command_ffmpeg, check=True)
-        return output_file
+        logging.info(f"Ejecutando comando yt-dlp para obtener enlace de: {url}")
+        output = subprocess.check_output(command_yt_dlp).decode('utf-8').strip()
+        logging.info(f"Enlace obtenido: {output}")
+        return output  # Regresa el enlace del flujo
     except subprocess.CalledProcessError as e:
-        print(f"Error al grabar el clip: {e}")
+        logging.error(f"Error al obtener el enlace: {e}")
         return None
 
-async def upload_video(chat_id, file_path):
-    """Sube el video al chat especificado, dividiéndolo si es necesario."""
-    file_parts = dividir_archivo(
-        file_path) if os.path.getsize(
-            file_path) > 2 * 1024 * 1024 * 1024 else [file_path]
+# Función para grabar el clip con FFmpeg
+async def grabar_clip(url):
+    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
+    duration = 30  # Duración fija a 30 segundos
+
+    # Comando para grabar la transmisión usando FFmpeg
+    command_ffmpeg = [
+        'ffmpeg',
+        '-i', url,
+        '-t', str(duration),  # Duración fija a 30 segundos
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        output_file
+    ]
 
     try:
-        for part in file_parts:
-            logging.info(f"Subiendo archivo a Telegram: {part}")  # Log de subida
-            with open(part, "rb") as video_file:
-                await bot.send_video(chat_id=chat_id,
-                                     video=video_file,
-                                     supports_streaming=True)
+        logging.info(f"Iniciando grabación del clip de 30 segundos desde {url}")
+        subprocess.run(command_ffmpeg)  # Ejecuta el comando de grabación
+        logging.info(f"Clip grabado en: {output_file}")
+        return output_file
     except Exception as e:
-        print(f"Error al enviar el archivo: {e}")
-        raise  # Re-lanzar la excepción para que sea manejada en handle_quality_selection
-    finally:
-        for part in file_parts:
-            if os.path.exists(part):
-                os.remove(part)
+        logging.error(f"Error al grabar el clip: {e}")
+        return None
 
-    # Eliminar el archivo original después de dividirlo y enviar las partes
-    if len(file_parts) > 1 and os.path.exists(file_path):
-        os.remove(file_path)
+# Manejadores de comandos y mensajes en Pyrogram
+@bot.on_message(filters.command('grabar'))
+async def handle_grabar(client, message):
+    logging.info(f"Comando /grabar recibido de {message.from_user.id}")
+    await message.reply("Por favor, envía la URL de la transmisión de Chaturbate.")
 
-@bot.on(events.NewMessage(pattern='/detener'))
-async def handle_detener(event):
-    if detener_grabacion(event.chat_id):
-        await event.respond("Grabación detenida. Subiendo el archivo...")
-        try:
-            await upload_video(event.chat_id, f'completo_{event.chat_id}.mp4')
-        except Exception as e:
-            await event.respond(f"Error al subir el archivo: {e}")
-    else:
-        await event.respond("No hay grabación en curso.")
+@bot.on_message(filters.text & ~filters.command("start"))  # Solo procesar texto que no es el comando /start
+async def process_url(client, message):
+    url = message.text
+    logging.info(f"URL recibida: {url} de {message.from_user.id}")
+    await message.reply("Obteniendo enlace de transmisión...")
 
-@bot.on(events.NewMessage)
-async def process_message(event):
-    """Procesa los mensajes del usuario."""
-    url = event.raw_text
-    chat_id = event.chat_id
+    flujo_url = obtener_enlace(url)  # Obtiene el enlace del flujo
 
-    if url.startswith("http://") or url.startswith("https://"):
-        user_data[chat_id] = url
-        if chat_id in recording_processes:
-            await event.respond(
-                "Ya hay una grabación en curso. Usa /detener para finalizarla.")
+    if flujo_url:
+        await message.reply("Grabando clip de 30 segundos...")
+        clip_path = await grabar_clip(flujo_url)  # Graba el clip
+        
+        if clip_path:
+            try:
+                await bot.send_video(message.chat.id, clip_path)
+                logging.info(f"Clip enviado al chat: {message.chat.id}")
+                await message.reply(f"Descarga completada: {flujo_url} (30 segundos)")
+                os.remove(clip_path)  # Elimina el clip después de enviarlo
+                logging.info(f"Clip {clip_path} eliminado del servidor")
+            except Exception as e:
+                logging.error(f"Error al enviar el video a Telegram: {e}")
         else:
-            await event.respond("Selecciona el tipo de grabación:",
-                                 buttons=[
-                                     [Button.inline("Clip", b'clip'),
-                                      Button.inline("Completo", b'completo')]
-                                 ])
+            logging.error("No se pudo grabar el clip.")
+            await message.reply("No se pudo grabar el clip.")
     else:
-        # Responder solo si no es un comando
-        if not url.startswith('/'):
-            await event.respond("Por favor, envía un enlace de transmisión válido.")
+        logging.error("No se pudo obtener el enlace de la transmisión.")
+        await message.reply("No se pudo obtener el enlace de la transmisión.")
 
-@bot.on(events.CallbackQuery)
-async def handle_quality_selection(event):
-    """Maneja la selección de calidad o tipo de grabación."""
-    tipo_grabacion = event.data.decode('utf-8')
-    chat_id = event.chat_id
-    flujo_url = user_data.get(chat_id)
-    clip_path = None  # Inicializar clip_path
+@bot.on_message(filters.command('start'))
+async def send_welcome(client, message):
+    logging.info(f"Comando /start recibido de {message.from_user.id}")
+    welcome_message = (
+        "¡Hola! Bienvenido a mi bot.\n\n"
+        "Aquí están los comandos disponibles:\n"
+        "/grabar - Graba un clip de 30 segundos de una transmisión de Chaturbate."
+    )
+    await message.reply(welcome_message)
 
-    try:
-        if tipo_grabacion == 'clip':
-            await event.edit("Grabando clip de 30 segundos...")
-
-            clip_path = await grabar_clip(flujo_url, "estandar")  # Calidad estándar por defecto
-            if clip_path:
-                await upload_video(chat_id, clip_path)
-                await event.respond(f"Descarga completada (30 segundos)")
-            else:
-                await event.respond("No se pudo grabar el clip.")
-
-        elif tipo_grabacion == 'completo':
-            await event.edit("Grabando transmisión completa...")
-            output_file = f'completo_{chat_id}.mp4'
-            process = await grabar_completo(flujo_url, output_file)
-            if process:
-                recording_processes[chat_id] = process
-            else:
-                await event.respond("No se pudo iniciar la grabación.")
-
-    except Exception as e:
-        print(f"Error al procesar la grabación: {e}")
-    finally:  # Mover la eliminación del archivo aquí
-        if tipo_grabacion == 'clip' and clip_path and os.path.exists(
-                clip_path):
-            os.remove(clip_path)
-
-@bot.on(events.NewMessage(pattern='/start'))
-async def send_welcome(event):
-    """Envía un mensaje de bienvenida con los comandos disponibles."""
-    await event.respond(
-        "¡Hola! Simplemente envía un enlace de transmisión para comenzar a grabar.\n"
-        "Puedes usar /detener para detener la grabación en curso.")
-
-bot.start()
-bot.run_until_disconnected()
+# Ejecutar el bot y la app Flask con puerto "falso"
+if __name__ == '__main__':
+    # Inicia el servidor Flask en un hilo separado
+    threading.Thread(target=run_flask).start()
+    
+    # Inicia el bot
+    logging.info("Iniciando el bot de Telegram")
+    bot.run()
