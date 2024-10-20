@@ -1,7 +1,7 @@
 import subprocess
 import time
 import os
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 import asyncio
 
 # Configuración de la API
@@ -62,20 +62,10 @@ async def set_link(event):
     # Iniciar el monitoreo automático del enlace
     await programar_extraccion_automatica(link)
 
-# Evento que se ejecuta cuando el bot arranca con un botón para iniciar la configuración
+# Evento que se ejecuta cuando el bot arranca
 @bot.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    # Mostrar un botón para que el usuario configure el enlace
-    await event.respond(
-        "¡Bienvenido! Haz clic en el botón para configurar el enlace a monitorear.",
-        buttons=[Button.text("Configurar enlace", resize=True, single_use=True)]
-    )
-
-# Evento para manejar cuando el usuario hace clic en el botón para configurar el enlace
-@bot.on(events.CallbackQuery)
-async def callback_query_handler(event):
-    if event.data == b"Configurar enlace":
-        await event.respond("/setlink")  # Ejecutar el comando para configurar el enlace
+    await event.respond("¡Bot iniciado! Usa /setlink para configurar el enlace a monitorear.")
 
 # Iniciar el bot
 print("Bot iniciado...")
