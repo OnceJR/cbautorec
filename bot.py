@@ -3,7 +3,6 @@ import time
 import os
 import logging
 from telethon import TelegramClient, events
-from flask import Flask
 import threading
 import asyncio
 
@@ -16,17 +15,6 @@ bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Configurar logs
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Aplicación Flask para mantener el puerto abierto
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running"
-
-# Hilo separado para Flask
-def run_flask():
-    app.run(host="0.0.0.0", port=8080)
 
 # Función para obtener el enlace de transmisión con yt-dlp
 def obtener_enlace(url):
@@ -50,12 +38,15 @@ def obtener_enlace(url):
 # Función para grabar la transmisión completa
 async def grabar_transmision(url, chat_id):
     output_file = f'grabacion_completa_{time.strftime("%Y%m%d_%H%M%S")}.mp4'
+    temp_file = f'temp_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Archivo temporal durante la grabación
+
+    # Usar archivo temporal para grabar
     command_ffmpeg = [
         'ffmpeg',
         '-i', url,
         '-c:v', 'copy',
         '-c:a', 'copy',
-        output_file
+        temp_file  # Guardar en archivo temporal
     ]
     
     logging.info(f"Iniciando grabación completa desde {url}")
@@ -63,20 +54,36 @@ async def grabar_transmision(url, chat_id):
     
     # Espera para detener la grabación
     await bot.send_message(chat_id, "Grabación iniciada. Envíe /detener para detener la grabación.")
-    return proceso, output_file
+    return proceso, temp_file, output_file
 
-# Manejador para detener la grabación manualmente
-async def detener_grabacion(proceso, chat_id, output_file):
+# Función para detener la grabación y remuxear el archivo
+async def detener_grabacion(proceso, chat_id, temp_file, output_file):
     proceso.terminate()  # Detiene la grabación
-    await bot.send_message(chat_id, "Grabación detenida. Subiendo archivo...")
+    await bot.send_message(chat_id, "Grabación detenida. Procesando archivo...")
+
+    # Remuxear para asegurar que el archivo MP4 sea válido
+    command_remux = [
+        'ffmpeg',
+        '-i', temp_file,
+        '-c:v', 'copy',
+        '-c:a', 'copy',
+        '-movflags', '+faststart',  # Optimiza para reproducción en streaming
+        output_file
+    ]
     
-    # Enviar archivo grabado
     try:
+        subprocess.run(command_remux)  # Remuxea el archivo
+        logging.info(f"Archivo {output_file} generado correctamente.")
+        
+        # Enviar archivo a Telegram
         await bot.send_file(chat_id, output_file)
         logging.info(f"Archivo {output_file} enviado al chat: {chat_id}")
+        
+        os.remove(temp_file)  # Elimina el archivo temporal
         os.remove(output_file)  # Elimina el archivo después de enviarlo
+        logging.info(f"Archivos {temp_file} y {output_file} eliminados del servidor")
     except Exception as e:
-        logging.error(f"Error al enviar el archivo grabado: {e}")
+        logging.error(f"Error al procesar el archivo grabado: {e}")
 
 # Manejador de comandos para iniciar la grabación completa
 @bot.on(events.NewMessage(pattern='/grabar'))
@@ -93,13 +100,13 @@ async def process_url(event):
         flujo_url = obtener_enlace(url)
         
         if flujo_url:
-            proceso, output_file = await grabar_transmision(flujo_url, chat_id)
+            proceso, temp_file, output_file = await grabar_transmision(flujo_url, chat_id)
             
             # Manejador para detener la grabación
             @bot.on(events.NewMessage(pattern='/detener'))
             async def handle_detener(event):
                 logging.info(f"Comando /detener recibido de {event.sender_id}")
-                await detener_grabacion(proceso, chat_id, output_file)
+                await detener_grabacion(proceso, chat_id, temp_file, output_file)
         else:
             await event.respond("No se pudo obtener el enlace de la transmisión.")
 
@@ -115,7 +122,7 @@ async def send_welcome(event):
     )
     await event.respond(welcome_message)
 
-# Ejecutar el bot y la app Flask en paralelo
+# Ejecutar el bot
 if __name__ == '__main__':
-    threading.Thread(target=run_flask).start()
+    logging.info("Iniciando el bot de Telegram")
     bot.run_until_disconnected()
