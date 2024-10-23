@@ -24,10 +24,6 @@ chrome_options.add_argument("--headless")
 chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
-# Almacena el último modelo procesado y estado de descarga
-last_model = None
-downloading = False
-
 # Función para extraer el último enlace m3u8
 def extract_last_m3u8_link(chaturbate_link):
     driver.get("https://onlinetool.app/ext/m3u8_extractor")
@@ -45,10 +41,11 @@ def extract_last_m3u8_link(chaturbate_link):
     return m3u8_links[-1].get_attribute('href') if m3u8_links else None
 
 # Función para descargar usando yt-dlp
-def download_with_yt_dlp(m3u8_url):
+def download_with_yt_dlp(m3u8_url, output_file):
     command_yt_dlp = [
         'yt-dlp',
         '-f', 'best',
+        '-o', output_file,
         m3u8_url
     ]
 
@@ -56,69 +53,70 @@ def download_with_yt_dlp(m3u8_url):
         logging.info(f"Iniciando la descarga con yt-dlp desde: {m3u8_url}")
         subprocess.run(command_yt_dlp)
         logging.info("Descarga completa.")
+        return output_file
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
+        return None
 
-# Función para sacar un clip de 30 segundos de un enlace
-def clip_video_from_url(video_url, start_time):
-    output_file = f"clip_{start_time}.mp4"
-    command_ffmpeg = [
-        'ffmpeg',
-        '-i', video_url,
-        '-ss', str(start_time),
-        '-t', '30',
-        '-c', 'copy',
-        output_file
-    ]
+# Función para descargar y crear un clip de 30 segundos
+async def download_and_clip(m3u8_url, chat_id):
+    output_file = "video_descargado.mp4"
+    downloaded_file = download_with_yt_dlp(m3u8_url, output_file)
 
-    try:
-        logging.info(f"Sacando clip de 30 segundos desde el segundo {start_time}...")
-        subprocess.run(command_ffmpeg)
-        logging.info(f"Clip guardado como {output_file}.")
-    except Exception as e:
-        logging.error(f"Error al crear el clip: {e}")
-
-# Función para verificar enlaces cada minuto
-async def verificar_nuevos_enlaces():
-    global last_model, downloading
-    
-    while True:
-        if last_model and not downloading:
-            logging.info(f"Verificando enlaces para: {last_model}")
-            m3u8_link = extract_last_m3u8_link(last_model)
-            if m3u8_link:
-                logging.info(f"Descargando el enlace .m3u8: {m3u8_link}")
-                download_with_yt_dlp(m3u8_link)
-            else:
-                logging.info("No se encontraron enlaces .m3u8.")
-        await asyncio.sleep(60)  # Espera 1 minuto
+    if downloaded_file:
+        await bot.send_file(chat_id, downloaded_file)  # Envía el archivo al chat
+        os.remove(downloaded_file)  # Elimina el archivo después de enviarlo
+        logging.info(f"Archivo {downloaded_file} enviado y eliminado.")
+    else:
+        await bot.send_message(chat_id, "No se pudo descargar el video.")
 
 # Manejador de comandos para iniciar la grabación completa
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    global last_model
     logging.info(f"Comando /grabar recibido de {event.sender_id}")
     await event.respond("Por favor, envía la URL de la transmisión para comenzar la grabación completa.")
 
 # Procesar la URL para iniciar la grabación completa
 @bot.on(events.NewMessage)
 async def process_url(event):
-    global last_model
-    if event.text and not event.text.startswith("/"):
-        last_model = event.text
-        await event.respond(f"URL guardada: {last_model}")
+    if event.text and not event.text.startswith("/") and event.reply_to_msg_id:
+        reply_msg = await event.get_reply_message()
+        video_url = reply_msg.text
+        await event.respond("Iniciando descarga del video...")
+        await download_and_clip(video_url, event.chat_id)
 
 # Manejador para crear clips de 30 segundos
 @bot.on(events.NewMessage(pattern='/clip'))
 async def handle_clip(event):
-    if event.reply_to_msg_id:
+    logging.info(f"Comando /clip recibido de {event.sender_id}")
+    await event.respond("Por favor, envía la URL del video para crear un clip de 30 segundos.")
+
+# Procesar la URL para crear un clip de 30 segundos
+@bot.on(events.NewMessage)
+async def process_clip_url(event):
+    if event.text and not event.text.startswith("/") and event.reply_to_msg_id:
         reply_msg = await event.get_reply_message()
         video_url = reply_msg.text
-        start_time = 0  # Puedes modificar esto para especificar otro tiempo de inicio
         await event.respond("Creando clip de 30 segundos. Por favor espera...")
-        clip_video_from_url(video_url, start_time)
-    else:
-        await event.respond("Por favor, responde a un mensaje que contenga la URL del video para crear un clip.")
+        
+        output_file = "clip.mp4"
+        command_ffmpeg = [
+            'ffmpeg',
+            '-i', video_url,
+            '-ss', '0',
+            '-t', '30',
+            '-c', 'copy',
+            output_file
+        ]
+
+        try:
+            subprocess.run(command_ffmpeg)
+            await bot.send_file(event.chat_id, output_file)  # Envía el clip al chat
+            os.remove(output_file)  # Elimina el archivo después de enviarlo
+            logging.info(f"Clip {output_file} enviado y eliminado.")
+        except Exception as e:
+            logging.error(f"Error al crear el clip: {e}")
+            await event.respond("Error al crear el clip.")
 
 # Manejador para comando /start
 @bot.on(events.NewMessage(pattern='/start'))
@@ -132,9 +130,8 @@ async def send_welcome(event):
     )
     await event.respond(welcome_message)
 
-# Ejecutar el bot y la verificación de nuevos enlaces
+# Ejecutar el bot
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
-    bot.loop.create_task(verificar_nuevos_enlaces())
     bot.run_until_disconnected()
     driver.quit()
