@@ -8,6 +8,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from urllib.parse import urlparse
 from telethon.tl.types import InputFile
+import json
 
 # Configuración de la API
 API_ID = 24738183
@@ -26,9 +27,34 @@ chrome_options.add_argument("--headless")
 chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
-# Almacena el último modelo procesado y estado de descarga
-last_model = None
-downloading = False
+# Almacenar los enlaces m3u8 en un archivo JSON
+LINKS_FILE = 'links.json'
+
+# Cargar enlaces desde el archivo
+def load_links():
+    if os.path.exists(LINKS_FILE):
+        with open(LINKS_FILE, 'r') as f:
+            return json.load(f)
+    return []
+
+# Guardar enlaces en el archivo
+def save_links(links):
+    with open(LINKS_FILE, 'w') as f:
+        json.dump(links, f)
+
+# Función para agregar un enlace
+def add_link(link):
+    links = load_links()
+    if link not in links:
+        links.append(link)
+        save_links(links)
+
+# Función para eliminar un enlace
+def remove_link(link):
+    links = load_links()
+    if link in links:
+        links.remove(link)
+        save_links(links)
 
 # Validación de URL
 def is_valid_url(url):
@@ -71,7 +97,7 @@ async def download_with_yt_dlp(m3u8_url):
 
 # Función para subir archivos a Google Drive y eliminarlos del servidor
 async def upload_and_delete_from_server(file_path, file_name):
-    rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"  # Cambia por tu ruta de Google Drive
+    rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 
     try:
         # Subir el archivo a Google Drive usando rclone
@@ -89,14 +115,13 @@ async def upload_and_delete_from_server(file_path, file_name):
 
 # Función para grabar el clip con FFmpeg
 async def grabar_clip(m3u8_url):
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
-    duration = 30  # Duración fija a 30 segundos
+    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'
+    duration = 30
 
-    # Comando para grabar la transmisión usando FFmpeg
     command_ffmpeg = [
         'ffmpeg',
         '-i', m3u8_url,
-        '-t', str(duration),  # Duración fija a 30 segundos
+        '-t', str(duration),
         '-c:v', 'copy',
         '-c:a', 'copy',
         output_file
@@ -106,7 +131,7 @@ async def grabar_clip(m3u8_url):
         await asyncio.create_subprocess_exec(*command_ffmpeg)
         logging.info("Clip grabado exitosamente.")
         
-        # Después de grabar, subimos y eliminamos el archivo
+        # Subir y eliminar el archivo
         await upload_and_delete_from_server(output_file, output_file)
     except Exception as e:
         logging.error(f"Error al grabar el clip: {e}")
@@ -129,18 +154,16 @@ async def send_and_delete_files(event, folder):
     else:
         await event.respond("No se encontraron archivos pendientes.")
 
-# Función para verificar enlaces cada minuto
-async def verificar_nuevos_enlaces():
-    global last_model, downloading
+# Verificación de enlaces en cola
+async def verificar_enlaces():
     while True:
-        if last_model and not downloading:
-            logging.info(f"Verificando enlaces para: {last_model}")
-            m3u8_link = extract_last_m3u8_link(last_model)
+        links = load_links()
+        for link in links:
+            m3u8_link = extract_last_m3u8_link(link)
             if m3u8_link:
                 logging.info(f"Descargando el enlace .m3u8: {m3u8_link}")
-                downloading = True
                 await download_with_yt_dlp(m3u8_link)
-                downloading = False
+                remove_link(link)
             else:
                 logging.info("No se encontraron enlaces .m3u8.")
         await asyncio.sleep(60)  # Espera 1 minuto
@@ -148,56 +171,51 @@ async def verificar_nuevos_enlaces():
 # Manejador de comandos para iniciar la grabación completa
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    global last_model
-    logging.info(f"Comando /grabar recibido de {event.sender_id}")
     await event.respond("Por favor, envía la URL de la transmisión para comenzar la grabación completa.")
 
 # Manejador para comando /clip (nueva URL para el clip)
 @bot.on(events.NewMessage(pattern='/clip'))
 async def handle_clip_command(event):
-    logging.info(f"Comando /clip recibido de {event.sender_id}")
     await event.respond("Por favor, envía la URL de la transmisión para extraer un clip de 30 segundos.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
-    global last_model
     if event.text and is_valid_url(event.text):
         if '/clip' in event.raw_text:
             m3u8_link = extract_last_m3u8_link(event.text)
             if m3u8_link:
                 await event.respond("Creando clip de 30 segundos. Por favor espera...")
-                await grabar_clip(m3u8_link)  # Usar la nueva función para grabar el clip
-                await send_and_delete_files(event, ".")  # Envía y borra el archivo
+                await grabar_clip(m3u8_link)
+                await send_and_delete_files(event, ".")
             else:
                 await event.respond("No se encontraron enlaces .m3u8.")
         else:
-            last_model = event.text
-            await event.respond(f"URL guardada: {last_model}")
+            add_link(event.text)
+            await event.respond(f"URL guardada: {event.text}")
     else:
         await event.respond("Por favor, envía una URL válida.")
 
-# Manejador para comando /enviar_archivos (envía archivos no eliminados)
+# Manejador para comando /enviar_archivos
 @bot.on(events.NewMessage(pattern='/enviar_archivos'))
 async def handle_send_files(event):
-    await send_and_delete_files(event, ".")  # Envía y elimina archivos no eliminados
+    await send_and_delete_files(event, ".")
 
 # Manejador para comando /start
 @bot.on(events.NewMessage(pattern='/start'))
 async def send_welcome(event):
-    logging.info(f"Comando /start recibido de {event.sender_id}")
     welcome_message = (
         "¡Hola! Bienvenido a mi bot.\n\n"
-        "Aquí están los comandos disponibles:\n"
+        "Comandos disponibles:\n"
         "/grabar - Inicia la grabación completa de la transmisión.\n"
         "/clip - Extrae un clip de 30 segundos desde el inicio de la transmisión.\n"
         "/enviar_archivos - Envía archivos no eliminados."
     )
     await event.respond(welcome_message)
 
-# Ejecutar el bot y la verificación de nuevos enlaces
+# Ejecutar el bot y la verificación de enlaces
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
     
-    bot.loop.create_task(verificar_nuevos_enlaces())
+    bot.loop.create_task(verificar_enlaces())
     bot.run_until_disconnected()
     driver.quit()
