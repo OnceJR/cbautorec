@@ -10,8 +10,8 @@ from urllib.parse import urlparse
 from telethon.tl.types import InputFile
 
 # Configuración de la API
-API_ID = 21660737
-API_HASH = '610bd34454377eea7619977040c06c66'
+API_ID = 24738183
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
