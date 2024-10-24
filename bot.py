@@ -7,11 +7,12 @@ import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from urllib.parse import urlparse
+from telethon.tl.types import InputFile
 
 # Configuración de la API
-API_ID = 24738183  # Reemplaza con tu App API ID
-API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'  # Reemplaza con tu App API Hash
-BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"  # Reemplaza con tu Bot Token
+API_ID = 24738183
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
+BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -86,6 +87,24 @@ def clip_video(source_file, start_time):
     except Exception as e:
         logging.error(f"Error al crear el clip: {e}")
 
+# Función para listar archivos no eliminados
+def list_unremoved_files(folder):
+    files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
+    return files
+
+# Función para enviar archivos a Telegram y luego borrarlos
+async def send_and_delete_files(event, folder):
+    files = list_unremoved_files(folder)
+    if files:
+        for file in files:
+            file_path = os.path.join(folder, file)
+            await event.respond(f"Enviando archivo: {file}")
+            await bot.send_file(event.chat_id, InputFile(file_path))
+            os.remove(file_path)
+            logging.info(f"Archivo {file} enviado y borrado.")
+    else:
+        await event.respond("No se encontraron archivos pendientes.")
+
 # Función para verificar enlaces cada minuto
 async def verificar_nuevos_enlaces():
     global last_model, downloading
@@ -109,24 +128,35 @@ async def handle_grabar(event):
     logging.info(f"Comando /grabar recibido de {event.sender_id}")
     await event.respond("Por favor, envía la URL de la transmisión para comenzar la grabación completa.")
 
-# Procesar la URL para iniciar la grabación completa
+# Manejador para comando /clip (nueva URL para el clip)
+@bot.on(events.NewMessage(pattern='/clip'))
+async def handle_clip_command(event):
+    logging.info(f"Comando /clip recibido de {event.sender_id}")
+    await event.respond("Por favor, envía la URL de la transmisión para extraer un clip de 30 segundos.")
+
 @bot.on(events.NewMessage)
 async def process_url(event):
     global last_model
     if event.text and is_valid_url(event.text):
-        last_model = event.text
-        await event.respond(f"URL guardada: {last_model}")
+        if '/clip' in event.raw_text:
+            m3u8_link = extract_last_m3u8_link(event.text)
+            if m3u8_link:
+                await event.respond("Creando clip de 30 segundos. Por favor espera...")
+                await download_with_yt_dlp(m3u8_link)  # Descargar y extraer el clip
+                clip_video("video_descargado.mp4", 0)
+                await send_and_delete_files(event, ".")  # Envía y borra el archivo
+            else:
+                await event.respond("No se encontraron enlaces .m3u8.")
+        else:
+            last_model = event.text
+            await event.respond(f"URL guardada: {last_model}")
     else:
         await event.respond("Por favor, envía una URL válida.")
 
-# Manejador para crear clips de 30 segundos
-@bot.on(events.NewMessage(pattern='/clip'))
-async def handle_clip(event):
-    if os.path.exists("video_descargado.mp4"):
-        await event.respond("Creando clip de 30 segundos. Por favor espera...")
-        clip_video("video_descargado.mp4", 0)  # Cambia el nombre del archivo según corresponda
-    else:
-        await event.respond("No hay ningún video descargado para crear un clip.")
+# Manejador para comando /enviar_archivos (envía archivos no eliminados)
+@bot.on(events.NewMessage(pattern='/enviar_archivos'))
+async def handle_send_files(event):
+    await send_and_delete_files(event, ".")  # Envía y elimina archivos no eliminados
 
 # Manejador para comando /start
 @bot.on(events.NewMessage(pattern='/start'))
@@ -136,7 +166,8 @@ async def send_welcome(event):
         "¡Hola! Bienvenido a mi bot.\n\n"
         "Aquí están los comandos disponibles:\n"
         "/grabar - Inicia la grabación completa de la transmisión.\n"
-        "/clip - Crea un clip de 30 segundos del video actual."
+        "/clip - Extrae un clip de 30 segundos de un nuevo enlace.\n"
+        "/enviar_archivos - Envía archivos no eliminados."
     )
     await event.respond(welcome_message)
 
