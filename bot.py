@@ -132,21 +132,26 @@ async def handle_grabar(event):
 @bot.on(events.NewMessage(pattern='/clip'))
 async def handle_clip_command(event):
     logging.info(f"Comando /clip recibido de {event.sender_id}")
-    await event.respond("Por favor, envía la URL de la transmisión para extraer un clip de 30 segundos.")
+    await event.respond("Por favor, envía la URL de la transmisión y el tiempo de inicio (en segundos) para extraer un clip de 30 segundos.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
     global last_model
     if event.text and is_valid_url(event.text):
         if '/clip' in event.raw_text:
-            m3u8_link = extract_last_m3u8_link(event.text)
-            if m3u8_link:
-                await event.respond("Creando clip de 30 segundos. Por favor espera...")
-                await download_with_yt_dlp(m3u8_link)  # Descargar y extraer el clip
-                clip_video("video_descargado.mp4", 0)
-                await send_and_delete_files(event, ".")  # Envía y borra el archivo
+            parts = event.text.split()
+            if len(parts) > 1 and parts[1].isdigit():
+                start_time = int(parts[1])
+                m3u8_link = extract_last_m3u8_link(parts[0])
+                if m3u8_link:
+                    await event.respond("Creando clip de 30 segundos. Por favor espera...")
+                    await download_with_yt_dlp(m3u8_link)  # Descargar y extraer el clip
+                    clip_video("video_descargado.mp4", start_time)  # Usar el tiempo de inicio
+                    await send_and_delete_files(event, ".")  # Envía y borra el archivo
+                else:
+                    await event.respond("No se encontraron enlaces .m3u8.")
             else:
-                await event.respond("No se encontraron enlaces .m3u8.")
+                await event.respond("Por favor, proporciona el tiempo de inicio en segundos.")
         else:
             last_model = event.text
             await event.respond(f"URL guardada: {last_model}")
@@ -166,7 +171,7 @@ async def send_welcome(event):
         "¡Hola! Bienvenido a mi bot.\n\n"
         "Aquí están los comandos disponibles:\n"
         "/grabar - Inicia la grabación completa de la transmisión.\n"
-        "/clip - Extrae un clip de 30 segundos de un nuevo enlace.\n"
+        "/clip [tiempo] - Extrae un clip de 30 segundos a partir del tiempo especificado (en segundos).\n"
         "/enviar_archivos - Envía archivos no eliminados."
     )
     await event.respond(welcome_message)
