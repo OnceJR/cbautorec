@@ -197,9 +197,7 @@ async def send_welcome(event):
 # Ejecutar el bot y la verificación de nuevos enlaces
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
-    botAquí está la continuación del código modificado:
-
-```python
+    
     bot.loop.create_task(verificar_nuevos_enlaces())
     bot.run_until_disconnected()
     driver.quit()
