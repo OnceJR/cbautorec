@@ -69,23 +69,26 @@ async def download_with_yt_dlp(m3u8_url):
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
 
-# Función para sacar un clip de 30 segundos
-def clip_video(source_file, start_time):
-    output_file = f"clip_{start_time}.mp4"
+# Función para grabar el clip con FFmpeg
+async def grabar_clip(m3u8_url):
+    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
+    duration = 30  # Duración fija a 30 segundos
+
+    # Comando para grabar la transmisión usando FFmpeg
     command_ffmpeg = [
         'ffmpeg',
-        '-i', source_file,
-        '-ss', str(start_time),
-        '-t', '30',
-        '-c', 'copy',
+        '-i', m3u8_url,
+        '-t', str(duration),  # Duración fija a 30 segundos
+        '-c:v', 'copy',
+        '-c:a', 'copy',
         output_file
     ]
     try:
-        logging.info(f"Sacando clip de 30 segundos desde el segundo {start_time}...")
-        subprocess.run(command_ffmpeg)
-        logging.info(f"Clip guardado como {output_file}.")
+        logging.info(f"Iniciando la grabación del clip: {output_file}")
+        await asyncio.create_subprocess_exec(*command_ffmpeg)
+        logging.info("Clip grabado exitosamente.")
     except Exception as e:
-        logging.error(f"Error al crear el clip: {e}")
+        logging.error(f"Error al grabar el clip: {e}")
 
 # Función para listar archivos no eliminados
 def list_unremoved_files(folder):
@@ -142,8 +145,7 @@ async def process_url(event):
             m3u8_link = extract_last_m3u8_link(event.text)
             if m3u8_link:
                 await event.respond("Creando clip de 30 segundos. Por favor espera...")
-                await download_with_yt_dlp(m3u8_link)  # Descargar y extraer el clip
-                clip_video("video_descargado.mp4", 0)  # Cortar desde el inicio
+                await grabar_clip(m3u8_link)  # Usar la nueva función para grabar el clip
                 await send_and_delete_files(event, ".")  # Envía y borra el archivo
             else:
                 await event.respond("No se encontraron enlaces .m3u8.")
