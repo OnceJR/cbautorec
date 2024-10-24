@@ -69,6 +69,24 @@ async def download_with_yt_dlp(m3u8_url):
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
 
+# Función para subir archivos a Google Drive y eliminarlos del servidor
+async def upload_and_delete_from_server(file_path, file_name):
+    rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"  # Cambia por tu ruta de Google Drive
+
+    try:
+        # Subir el archivo a Google Drive usando rclone
+        logging.info(f"Subiendo {file_name} a Google Drive...")
+        result = subprocess.run(['rclone', 'copy', file_path, rclone_remote], check=True)
+        if result.returncode == 0:
+            logging.info(f"{file_name} subido exitosamente.")
+            # Eliminar el archivo local después de la subida
+            os.remove(file_path)
+            logging.info(f"{file_name} eliminado del servidor.")
+        else:
+            logging.error(f"Error al subir {file_name}.")
+    except Exception as e:
+        logging.error(f"Error al subir/eliminar {file_name}: {e}")
+
 # Función para grabar el clip con FFmpeg
 async def grabar_clip(m3u8_url):
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'  # Nombre del clip
@@ -87,6 +105,9 @@ async def grabar_clip(m3u8_url):
         logging.info(f"Iniciando la grabación del clip: {output_file}")
         await asyncio.create_subprocess_exec(*command_ffmpeg)
         logging.info("Clip grabado exitosamente.")
+        
+        # Después de grabar, subimos y eliminamos el archivo
+        await upload_and_delete_from_server(output_file, output_file)
     except Exception as e:
         logging.error(f"Error al grabar el clip: {e}")
 
@@ -176,6 +197,9 @@ async def send_welcome(event):
 # Ejecutar el bot y la verificación de nuevos enlaces
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
+    botAquí está la continuación del código modificado:
+
+```python
     bot.loop.create_task(verificar_nuevos_enlaces())
     bot.run_until_disconnected()
     driver.quit()
