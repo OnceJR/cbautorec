@@ -30,6 +30,9 @@ driver = webdriver.Chrome(options=chrome_options)
 # Almacenar los enlaces m3u8 en un archivo JSON
 LINKS_FILE = 'links.json'
 
+# Variable de control para grabaciones activas
+is_recording = False
+
 # Cargar enlaces desde el archivo
 def load_links():
     if os.path.exists(LINKS_FILE):
@@ -100,12 +103,10 @@ async def upload_and_delete_from_server(file_path, file_name):
     rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 
     try:
-        # Subir el archivo a Google Drive usando rclone
         logging.info(f"Subiendo {file_name} a Google Drive...")
         result = subprocess.run(['rclone', 'copy', file_path, rclone_remote], check=True)
         if result.returncode == 0:
             logging.info(f"{file_name} subido exitosamente.")
-            # Eliminar el archivo local después de la subida
             os.remove(file_path)
             logging.info(f"{file_name} eliminado del servidor.")
         else:
@@ -115,6 +116,11 @@ async def upload_and_delete_from_server(file_path, file_name):
 
 # Función para grabar el clip con FFmpeg
 async def grabar_clip(m3u8_url):
+    global is_recording
+    if is_recording:
+        logging.info("Ya hay una grabación activa. Esperando a que termine.")
+        return  # Salimos si ya hay una grabación activa
+
     output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'
     duration = 30
 
@@ -126,8 +132,10 @@ async def grabar_clip(m3u8_url):
         '-c:a', 'copy',
         output_file
     ]
+    
     try:
         logging.info(f"Iniciando la grabación del clip: {output_file}")
+        is_recording = True  # Marcamos que hemos iniciado una grabación
         await asyncio.create_subprocess_exec(*command_ffmpeg)
         logging.info("Clip grabado exitosamente.")
         
@@ -135,6 +143,8 @@ async def grabar_clip(m3u8_url):
         await upload_and_delete_from_server(output_file, output_file)
     except Exception as e:
         logging.error(f"Error al grabar el clip: {e}")
+    finally:
+        is_recording = False  # Marcamos que la grabación ha terminado
 
 # Función para listar archivos no eliminados
 def list_unremoved_files(folder):
