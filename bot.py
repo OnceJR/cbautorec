@@ -7,7 +7,6 @@ import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from urllib.parse import urlparse
-from telethon.tl.types import InputFile
 import json
 
 # Configuración de la API
@@ -99,19 +98,19 @@ async def download_with_yt_dlp(m3u8_url):
         logging.error(f"Error durante la descarga: {e}")
 
 # Subir a Google Drive y eliminar del servidor
-async def upload_and_delete_from_server(file_path, file_name):
+async def upload_and_delete_from_server(file_path):
     rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
     try:
-        logging.info(f"Subiendo {file_name} a Google Drive...")
+        logging.info(f"Subiendo {file_path} a Google Drive...")
         result = subprocess.run(['rclone', 'copy', file_path, rclone_remote], check=True)
         if result.returncode == 0:
-            logging.info(f"{file_name} subido exitosamente.")
+            logging.info(f"{file_path} subido exitosamente.")
             os.remove(file_path)
-            logging.info(f"{file_name} eliminado del servidor.")
+            logging.info(f"{file_path} eliminado del servidor.")
         else:
-            logging.error(f"Error al subir {file_name}.")
+            logging.error(f"Error al subir {file_path}.")
     except Exception as e:
-        logging.error(f"Error al subir/eliminar {file_name}: {e}")
+        logging.error(f"Error al subir/eliminar {file_path}: {e}")
 
 # Grabación de clip
 async def grabar_clip(m3u8_url):
@@ -133,7 +132,7 @@ async def grabar_clip(m3u8_url):
         await asyncio.create_subprocess_exec(*command_ffmpeg)
         logging.info("Clip grabado exitosamente.")
         
-        await upload_and_delete_from_server(output_file, output_file)
+        await upload_and_delete_from_server(output_file)
     except Exception as e:
         logging.error(f"Error al grabar: {e}")
     finally:
@@ -161,8 +160,8 @@ async def handle_grabar(event):
         parse_mode='html'  # Especifica el modo de parseo
     )
 
-# Manejador para comandos válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/clip|/enviar_archivos).*'))
+# Manejador para comandos no válidos
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start).*'))
 async def handle_invalid_commands(event):
     await event.respond("⚠️ Comando no reconocido. Usa /grabar para iniciar la grabación completa.")
 
