@@ -33,22 +33,24 @@ def load_links():
     if os.path.exists(LINKS_FILE):
         with open(LINKS_FILE, 'r') as f:
             return json.load(f)
-    return []
+    return {}
 
 def save_links(links):
     with open(LINKS_FILE, 'w') as f:
         json.dump(links, f)
 
-def add_link(link):
+def add_link(user_id, link):
     links = load_links()
-    if link not in links:
-        links.append(link)
+    if user_id not in links:
+        links[user_id] = []
+    if link not in links[user_id]:
+        links[user_id].append(link)
         save_links(links)
 
-def remove_link(link):
+def remove_link(user_id, link):
     links = load_links()
-    if link in links:
-        links.remove(link)
+    if user_id in links and link in links[user_id]:
+        links[user_id].remove(link)
         save_links(links)
 
 # Validación de URL
@@ -115,13 +117,14 @@ async def upload_and_delete_from_server(file_path):
 async def verificar_enlaces():
     while True:
         links = load_links()
-        for link in links:
-            m3u8_link = extract_last_m3u8_link(link)
-            if m3u8_link:
-                logging.info(f"Descargando el enlace m3u8: {m3u8_link}")
-                await download_with_yt_dlp(m3u8_link)
-                remove_link(link)
-            await asyncio.sleep(2)  # Reanuda la extracción tras cada descarga
+        for user_id, user_links in links.items():
+            for link in user_links:
+                m3u8_link = extract_last_m3u8_link(link)
+                if m3u8_link:
+                    logging.info(f"Descargando el enlace m3u8: {m3u8_link}")
+                    await download_with_yt_dlp(m3u8_link)
+                    remove_link(user_id, link)
+                await asyncio.sleep(2)  # Reanuda la extracción tras cada descarga
         await asyncio.sleep(60)
 
 # Comando de inicio de grabación completa
@@ -133,15 +136,25 @@ async def handle_grabar(event):
         parse_mode='html'
     )
 
+# Comando para mostrar enlaces guardados
+@bot.on(events.NewMessage(pattern='/mis_enlaces'))
+async def show_links(event):
+    user_id = str(event.sender_id)
+    links = load_links().get(user_id, [])
+    if links:
+        await event.respond("📌 <b>Enlaces guardados:</b>\n" + "\n".join(links), parse_mode='html')
+    else:
+        await event.respond("No tienes enlaces guardados.")
+
 # Manejador para comandos no válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start).*'))
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar para iniciar la grabación completa.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar o /mis_enlaces.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
     if event.text and is_valid_url(event.text):
-        add_link(event.text)
+        add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
     else:
         await event.respond("❗ Por favor, envía una URL válida de transmisión.")
@@ -153,7 +166,8 @@ async def send_welcome(event):
         "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
-        "• <b>/grabar</b> - Inicia una grabación completa de transmisión.",
+        "• <b>/grabar</b> - Inicia una grabación completa de transmisión.\n"
+        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.",
         parse_mode='html'
     )
 
