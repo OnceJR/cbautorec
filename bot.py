@@ -65,16 +65,24 @@ def is_valid_url(url):
 def extract_last_m3u8_link(chaturbate_link):
     try:
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        time.sleep(3)
+        time.sleep(5)  # Aumentar el tiempo de espera
         input_field = driver.find_element(By.NAME, "url")
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
         run_button = driver.find_element(By.XPATH, '//button[span[text()="Run"]]')
         run_button.click()
-        time.sleep(5)
+        time.sleep(15)  # Aumentar el tiempo de espera tras hacer clic
+        logging.info("Esperando que se procesen los enlaces...")
+
+        # Verificación de los enlaces m3u8
         m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
-        return m3u8_links[-1].get_attribute('href') if m3u8_links else None
+        logging.info(f"Enlaces encontrados: {len(m3u8_links)}")
+        if m3u8_links:
+            return m3u8_links[-1].get_attribute('href')
+        else:
+            logging.warning("No se encontraron enlaces m3u8.")
+            return None
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
         return None
@@ -141,8 +149,8 @@ async def verificar_enlaces():
                 logging.info(f"Descargando el enlace m3u8: {m3u8_link}")
                 await download_with_yt_dlp(m3u8_link)
                 remove_link(link)
-            await asyncio.sleep(2) # Reanuda la extracción tras cada descarga
-        await asyncio.sleep(60) 
+            await asyncio.sleep(2)  # Reanuda la extracción tras cada descarga
+        await asyncio.sleep(60)
 
 # Comando de inicio de grabación completa
 @bot.on(events.NewMessage(pattern='/grabar'))
