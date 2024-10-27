@@ -124,6 +124,7 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
+        await bot.send_message(user_id, f"❌ Error durante la descarga: {e}")
 
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
@@ -135,6 +136,11 @@ async def verificar_enlaces():
                 m3u8_link = extract_last_m3u8_link(link)
                 if m3u8_link:
                     tasks.append(download_with_yt_dlp(m3u8_link, user_id))
+                else:
+                    # Intenta extraer el enlace nuevamente si falló
+                    new_m3u8_link = extract_last_m3u8_link(link)
+                    if new_m3u8_link:
+                        tasks.append(download_with_yt_dlp(new_m3u8_link, user_id))
         if tasks:
             await asyncio.gather(*tasks)
         await asyncio.sleep(60)
