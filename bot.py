@@ -43,16 +43,18 @@ def save_links(links):
 
 def add_link(user_id, link):
     links = load_links()
-    if user_id not in links:
-        links[user_id] = []
-    if link not in links[user_id]:
-        links[user_id].append(link)
+    user_id_str = str(user_id)  # Convertir a string para guardar
+    if user_id_str not in links:
+        links[user_id_str] = []
+    if link not in links[user_id_str]:
+        links[user_id_str].append(link)
         save_links(links)
 
 def remove_link(user_id, link):
     links = load_links()
-    if user_id in links and link in links[user_id]:
-        links[user_id].remove(link)
+    user_id_str = str(user_id)  # Convertir a string para acceder
+    if user_id_str in links and link in links[user_id_str]:
+        links[user_id_str].remove(link)
         save_links(links)
 
 # Validación de URL
@@ -114,7 +116,7 @@ async def download_with_yt_dlp(m3u8_url, user_id):
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', f"{DOWNLOAD_PATH}%(title)s.%(ext)s"]
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
-        await bot.send_message(user_id, f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
+        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")  # Convierte user_id a entero
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
         logging.info("Descarga completa.")
@@ -124,14 +126,15 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
-        await bot.send_message(user_id, f"❌ Error durante la descarga: {e}")
+        await bot.send_message(int(user_id), f"❌ Error durante la descarga: {e}")  # Convierte user_id a entero
 
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
         links = load_links()
         tasks = []
-        for user_id, user_links in links.items():
+        for user_id_str, user_links in links.items():
+            user_id = int(user_id_str)  # Convertir a entero
             for link in user_links:
                 m3u8_link = extract_last_m3u8_link(link)
                 if m3u8_link:
