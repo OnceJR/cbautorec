@@ -148,6 +148,11 @@ async def handle_invalid_commands(event):
 
 @bot.on(events.NewMessage)
 async def process_url(event):
+    # Ignorar comandos para que solo se procesen URLs
+    if event.text.startswith('/'):
+        return  # Ignorar comandos
+    
+    # Procesar el mensaje solo si es una URL válida
     if event.text and is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
