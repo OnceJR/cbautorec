@@ -98,21 +98,6 @@ async def download_with_yt_dlp(m3u8_url):
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
 
-# Subir a Google Drive y eliminar del servidor
-async def upload_and_delete_from_server(file_path):
-    rclone_remote = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
-    try:
-        logging.info(f"Subiendo {file_path} a Google Drive...")
-        result = subprocess.run(['rclone', 'copy', file_path, rclone_remote], check=True)
-        if result.returncode == 0:
-            logging.info(f"{file_path} subido exitosamente.")
-            os.remove(file_path)
-            logging.info(f"{file_path} eliminado del servidor.")
-        else:
-            logging.error(f"Error al subir {file_path}.")
-    except Exception as e:
-        logging.error(f"Error al subir/eliminar {file_path}: {e}")
-
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
@@ -123,7 +108,6 @@ async def verificar_enlaces():
                 if m3u8_link:
                     logging.info(f"Descargando el enlace m3u8: {m3u8_link}")
                     await download_with_yt_dlp(m3u8_link)
-                    remove_link(user_id, link)
                 await asyncio.sleep(2)  # Reanuda la extracción tras cada descarga
         await asyncio.sleep(60)
 
@@ -146,10 +130,21 @@ async def show_links(event):
     else:
         await event.respond("No tienes enlaces guardados.")
 
+# Comando para eliminar un enlace específico
+@bot.on(events.NewMessage(pattern='/eliminar_enlace'))
+async def delete_link(event):
+    user_id = str(event.sender_id)
+    link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
+    if link and user_id in load_links() and link in load_links()[user_id]:
+        remove_link(user_id, link)
+        await event.respond(f"✅ Enlace eliminado: {link}")
+    else:
+        await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
+
 # Manejador para comandos no válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces).*'))
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar o /mis_enlaces.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces o /eliminar_enlace.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
@@ -167,7 +162,8 @@ async def send_welcome(event):
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
         "• <b>/grabar</b> - Inicia una grabación completa de transmisión.\n"
-        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.",
+        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.",
         parse_mode='html'
     )
 
