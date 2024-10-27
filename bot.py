@@ -149,7 +149,8 @@ async def verificar_enlaces():
 async def handle_grabar(event):
     await event.respond(
         "🔴 <b>Inicio de Grabación Completa</b> 🔴\n\n"
-        "Por favor, envía la URL de la transmisión para comenzar."
+        "Por favor, envía la URL de la transmisión para comenzar.",
+        parse_mode='html'  # Especifica el modo de parseo
     )
 
 # Manejador para comandos válidos
@@ -172,7 +173,8 @@ async def send_welcome(event):
         "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
-        "• <b>/grabar</b> - Inicia una grabación completa de transmisión."
+        "• <b>/grabar</b> - Inicia una grabación completa de transmisión.",
+        parse_mode='html'  # Especifica el modo de parseo
     )
 
 # Ejecutar el bot y la verificación de enlaces
