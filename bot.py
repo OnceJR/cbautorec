@@ -27,6 +27,8 @@ chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
+DOWNLOAD_PATH = "/root/cbautorec/"
+GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 
 # Cargar y guardar enlaces
 def load_links():
@@ -65,14 +67,14 @@ def is_valid_url(url):
 def extract_last_m3u8_link(chaturbate_link):
     try:
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        time.sleep(5)  # Aumentar el tiempo de espera
+        time.sleep(5)
         input_field = driver.find_element(By.NAME, "url")
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
         run_button = driver.find_element(By.XPATH, '//button[span[text()="Run"]]')
         run_button.click()
-        time.sleep(15)  # Aumentar el tiempo de espera tras hacer clic
+        time.sleep(15)
         logging.info("Esperando que se procesen los enlaces...")
 
         # Verificación de los enlaces m3u8
@@ -87,14 +89,39 @@ def extract_last_m3u8_link(chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
+# Subir y eliminar archivos mp4
+def upload_and_delete_mp4_files():
+    try:
+        files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
+        
+        for file in files:
+            file_path = os.path.join(DOWNLOAD_PATH, file)
+            command = ["rclone", "copy", file_path, GDRIVE_PATH]
+            result = subprocess.run(command, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                logging.info(f"Subida exitosa: {file}")
+                os.remove(file_path)
+                logging.info(f"Archivo eliminado: {file}")
+            else:
+                logging.error(f"Error al subir {file}: {result.stderr}")
+                
+    except Exception as e:
+        logging.error(f"Error en la función de subida y eliminación: {e}")
+
 # Descargar con yt-dlp (asíncrono)
-async def download_with_yt_dlp(m3u8_url):
-    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url]
+async def download_with_yt_dlp(m3u8_url, user_id):
+    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', f"{DOWNLOAD_PATH}%(title)s.%(ext)s"]
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
+        await bot.send_message(user_id, f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
         logging.info("Descarga completa.")
+
+        # Llamada a la función de subida y eliminación
+        upload_and_delete_mp4_files()
+        
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
 
@@ -102,20 +129,21 @@ async def download_with_yt_dlp(m3u8_url):
 async def verificar_enlaces():
     while True:
         links = load_links()
+        tasks = []
         for user_id, user_links in links.items():
             for link in user_links:
                 m3u8_link = extract_last_m3u8_link(link)
                 if m3u8_link:
-                    logging.info(f"Descargando el enlace m3u8: {m3u8_link}")
-                    await download_with_yt_dlp(m3u8_link)
-                await asyncio.sleep(2)  # Reanuda la extracción tras cada descarga
+                    tasks.append(download_with_yt_dlp(m3u8_link, user_id))
+        if tasks:
+            await asyncio.gather(*tasks)
         await asyncio.sleep(60)
 
-# Comando de inicio de grabación completa
+# Comando de inicio de monitoreo y grabación automática de una transmisión
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
     await event.respond(
-        "🔴 <b>Inicio de Grabación Completa</b> 🔴\n\n"
+        "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
         "Por favor, envía la URL de la transmisión para comenzar.",
         parse_mode='html'
     )
@@ -148,16 +176,13 @@ async def handle_invalid_commands(event):
 
 @bot.on(events.NewMessage)
 async def process_url(event):
-    # Ignorar comandos para que solo se procesen URLs
     if event.text.startswith('/'):
-        return  # Ignorar comandos
+        return
     
-    # Procesar el mensaje solo si es una URL válida
     if event.text and is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
 
-        # Enviar alerta
         await event.respond(
             "⚠️ <b>¡URL guardada!</b>\n\n"
             "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
@@ -173,13 +198,12 @@ async def send_welcome(event):
         "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
-        "• <b>/grabar</b> - Inicia una grabación completa de transmisión.\n"
+        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.",
         parse_mode='html'
     )
 
-# Ejecutar el bot y la verificación de enlaces
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
     
