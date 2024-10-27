@@ -152,13 +152,16 @@ async def handle_grabar(event):
         "Por favor, envía la URL de la transmisión para comenzar."
     )
 
+# Manejador para comandos válidos
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/clip|/enviar_archivos).*'))
+async def handle_invalid_commands(event):
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar para iniciar la grabación completa.")
+
 @bot.on(events.NewMessage)
 async def process_url(event):
     if event.text and is_valid_url(event.text):
         add_link(event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
-    elif event.text.startswith("/"):
-        await event.respond("⚠️ Comando no reconocido. Usa /grabar para iniciar la grabación completa.")
     else:
         await event.respond("❗ Por favor, envía una URL válida de transmisión.")
 
