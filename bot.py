@@ -27,7 +27,6 @@ chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
-is_recording = False
 
 # Cargar y guardar enlaces
 def load_links():
@@ -112,32 +111,6 @@ async def upload_and_delete_from_server(file_path):
     except Exception as e:
         logging.error(f"Error al subir/eliminar {file_path}: {e}")
 
-# Grabación de clip
-async def grabar_clip(m3u8_url):
-    global is_recording
-    if is_recording:
-        logging.info("Ya hay una grabación activa.")
-        return
-
-    output_file = f'clip_{time.strftime("%Y%m%d_%H%M%S")}.mp4'
-    duration = 30
-
-    command_ffmpeg = [
-        'ffmpeg', '-i', m3u8_url, '-t', str(duration), '-c:v', 'copy', '-c:a', 'copy', output_file
-    ]
-
-    try:
-        logging.info(f"Iniciando grabación: {output_file}")
-        is_recording = True
-        await asyncio.create_subprocess_exec(*command_ffmpeg)
-        logging.info("Clip grabado exitosamente.")
-        
-        await upload_and_delete_from_server(output_file)
-    except Exception as e:
-        logging.error(f"Error al grabar: {e}")
-    finally:
-        is_recording = False
-
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
@@ -157,7 +130,7 @@ async def handle_grabar(event):
     await event.respond(
         "🔴 <b>Inicio de Grabación Completa</b> 🔴\n\n"
         "Por favor, envía la URL de la transmisión para comenzar.",
-        parse_mode='html'  # Especifica el modo de parseo
+        parse_mode='html'
     )
 
 # Manejador para comandos no válidos
@@ -181,7 +154,7 @@ async def send_welcome(event):
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
         "• <b>/grabar</b> - Inicia una grabación completa de transmisión.",
-        parse_mode='html'  # Especifica el modo de parseo
+        parse_mode='html'
     )
 
 # Ejecutar el bot y la verificación de enlaces
