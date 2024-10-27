@@ -29,6 +29,7 @@ driver = webdriver.Chrome(options=chrome_options)
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
+ADMIN_ID = 1170684259  # ID del administrador
 
 # Cargar y guardar enlaces
 def load_links():
@@ -209,13 +210,36 @@ async def send_welcome(event):
         "Comandos:\n"
         "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
-        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.",
-        parse_mode='html'
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado."
     )
 
+# Comando del admin para mostrar otros comandos
+@bot.on(events.NewMessage(pattern='/admin'))
+async def admin_commands(event):
+    if event.sender_id == ADMIN_ID:
+        await event.respond(
+            "⚙️ <b>Comandos de administrador:</b>\n"
+            "• <b>/status</b> - Estado del bot.\n"
+            "• <b>/reset_links</b> - Reiniciar enlaces."
+        )
+
+# Comando para el estado del bot
+@bot.on(events.NewMessage(pattern='/status'))
+async def status(event):
+    if event.sender_id == ADMIN_ID:
+        await event.respond("✅ El bot está funcionando correctamente.")
+
+# Comando para reiniciar enlaces
+@bot.on(events.NewMessage(pattern='/reset_links'))
+async def reset_links(event):
+    if event.sender_id == ADMIN_ID:
+        save_links({})
+        await event.respond("🔄 Todos los enlaces han sido eliminados.")
+
+# Iniciar el bot
+async def main():
+    await bot.start()
+    await verificar_enlaces()
+
 if __name__ == '__main__':
-    logging.info("Iniciando el bot de Telegram")
-    
-    bot.loop.create_task(verificar_enlaces())
-    bot.run_until_disconnected()
-    driver.quit()
+    asyncio.run(main())
