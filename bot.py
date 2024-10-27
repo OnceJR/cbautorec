@@ -156,6 +156,13 @@ async def process_url(event):
     if event.text and is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
+
+        # Enviar alerta
+        await event.respond(
+            "⚠️ <b>¡URL guardada!</b>\n\n"
+            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            parse_mode='html'
+        )
     else:
         await event.respond("❗ Por favor, envía una URL válida de transmisión.")
 
