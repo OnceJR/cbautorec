@@ -239,8 +239,7 @@ async def send_welcome(event):
         "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
-        "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/reset_links</b> - Resetea todos los enlaces (solo para admin).",
+        "• <b>/status</b> - Muestra el estado del bot.\n",
         parse_mode='html'
     )
 
