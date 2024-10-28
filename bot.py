@@ -1,4 +1,4 @@
-import subprocess
+import subprocess 
 import time
 import os
 import logging
@@ -29,6 +29,7 @@ driver = webdriver.Chrome(options=chrome_options)
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
+CHANNEL_LOG = '@YourLogChannel'  # Cambia a tu canal de logs
 
 # Cargar y guardar enlaces
 def load_links():
@@ -92,7 +93,7 @@ def extract_last_m3u8_link(chaturbate_link):
         return None
 
 # Subir y eliminar archivos mp4
-def upload_and_delete_mp4_files():
+def upload_and_delete_mp4_files(user_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
         
@@ -103,6 +104,8 @@ def upload_and_delete_mp4_files():
             
             if result.returncode == 0:
                 logging.info(f"Subida exitosa: {file}")
+                file_size = os.path.getsize(file_path) / (1024 * 1024)  # Tamaño en MB
+                await bot.send_message(user_id, f"✅ Video subido: {file}\nTamaño: {file_size:.2f} MB\nEnlace: {GDRIVE_PATH}/{file}")
                 os.remove(file_path)
                 logging.info(f"Archivo eliminado: {file}")
             else:
@@ -122,7 +125,7 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         logging.info("Descarga completa.")
 
         # Llamada a la función de subida y eliminación
-        upload_and_delete_mp4_files()
+        await upload_and_delete_mp4_files(user_id)
         
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
@@ -196,43 +199,13 @@ async def reset_links(event):
 # Manejador para comandos no válidos
 @bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, /status o /reset_links.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, o /status.")
 
-@bot.on(events.NewMessage)
-async def process_url(event):
-    if event.text.startswith('/'):
-        return
-    
-    if event.text and is_valid_url(event.text):
-        add_link(str(event.sender_id), event.text)
-        await event.respond(f"🌐 URL guardada: {event.text}")
+# Iniciar el bot
+async def main():
+    await bot.start()
+    await bot.send_message(CHANNEL_LOG, "🔄 El bot se ha iniciado.")
+    await verificar_enlaces()
 
-        await event.respond(
-            "⚠️ <b>¡URL guardada!</b>\n\n"
-            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
-            parse_mode='html'
-        )
-    else:
-        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
-
-# Bienvenida
-@bot.on(events.NewMessage(pattern='/start'))
-async def send_welcome(event):
-    await event.respond(
-        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
-        "Puedes iniciar una grabación enviando una URL válida.\n"
-        "Comandos:\n"
-        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
-        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
-        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
-        "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/reset_links</b> - Resetea todos los enlaces (solo para admin).",
-        parse_mode='html'
-    )
-
-if __name__ == '__main__':
-    logging.info("Iniciando el bot de Telegram")
-    
-    bot.loop.create_task(verificar_enlaces())
-    bot.run_until_disconnected()
-    driver.quit()
+if __name__ == "__main__":
+    asyncio.run(main())
