@@ -69,6 +69,7 @@ async def extract_last_m3u8_link(chaturbate_link):
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-dev-shm-usage")
+
         driver = webdriver.Chrome(options=chrome_options)
 
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
@@ -94,7 +95,37 @@ async def extract_last_m3u8_link(chaturbate_link):
             return None
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
-        return None
+        # Reintento de conexión si hubo un error
+        for attempt in range(3):  # Intentar 3 veces
+            try:
+                logging.info(f"Reintentando conexión, intento {attempt + 1}...")
+                driver = webdriver.Chrome(options=chrome_options)
+                driver.get("https://onlinetool.app/ext/m3u8_extractor")
+                # Repetir los pasos para extraer el enlace
+                wait = WebDriverWait(driver, 10)
+                input_field = wait.until(EC.presence_of_element_located((By.NAME, "url")))
+                input_field.clear()
+                input_field.send_keys(chaturbate_link)
+
+                run_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]')))
+                run_button.click()
+
+                logging.info("Esperando que se procesen los enlaces...")
+                await asyncio.sleep(15)  # Esperar mientras se procesan
+
+                m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
+                driver.quit()
+
+                if m3u8_links:
+                    return m3u8_links[-1].get_attribute('href')
+                else:
+                    logging.warning("No se encontraron enlaces m3u8 en el reintento.")
+                    return None
+            except Exception as retry_exception:
+                logging.error(f"Error en el intento {attempt + 1}: {retry_exception}")
+                driver.quit()
+                await asyncio.sleep(5)  # Esperar antes de reintentar
+        return None  # Retornar None si todos los intentos fallan
 
 # Enviar actualización de progreso al canal
 async def send_progress_update(message):
@@ -188,33 +219,26 @@ async def delete_link(event):
         remove_link(user_id, link)
         await event.respond(f"✅ Enlace eliminado: {link}")
     else:
-        await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
+        await event.respond("❌ Enlace no encontrado o no válido.")
 
-# Manejador para comandos no válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace).*'))
-async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces o /eliminar_enlace.")
+# Comando para cerrar el bot
+@bot.on(events.NewMessage(pattern='/cerrar'))
+async def shutdown(event):
+    await event.respond("🔴 Cerrando el bot...")
+    await bot.disconnect()
 
-# Procesamiento de URLs enviadas
-@bot.on(events.NewMessage)
-async def process_url(event):
-    if event.text.startswith('/'):
-        return
-    
-    if event.text and is_valid_url(event.text):
-        add_link(str(event.sender_id), event.text)
-        await event.respond(f"✅ Enlace guardado: {event.text}")
-    else:
-        await event.respond("❌ URL no válida.")
+# Comando para detener la grabación
+@bot.on(events.NewMessage(pattern='/detener'))
+async def stop_recording(event):
+    # Aquí implementas la lógica para detener la grabación
+    await event.respond("🔴 Grabación detenida.")
 
-# Función principal
+# Comenzar el bot y las tareas
 async def main():
-    async with bot:
-        await bot.start(bot_token=BOT_TOKEN)
-        await asyncio.gather(
-            verificar_enlaces(),
-            upload_and_delete_mp4_files()
-        )
+    await bot.start()
+    await asyncio.gather(
+        verificar_enlaces(),
+        upload_and_delete_mp4_files(),
+    )
 
-if __name__ == '__main__':
-    asyncio.run(main())
+asyncio.run(main())
