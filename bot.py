@@ -14,9 +14,6 @@ API_ID = 24738183
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 
-# Lista de usuarios permitidos (agrega aquí los IDs de los usuarios permitidos)
-ALLOWED_USERS = {1170684259, 1218594540}  # Reemplaza con los IDs de los usuarios permitidos
-
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Configurar logs
@@ -168,10 +165,6 @@ async def verificar_enlaces():
 # Comando de inicio de monitoreo y grabación automática de una transmisión
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    if event.sender_id not in ALLOWED_USERS:
-        await event.respond("❗ No tienes permiso para usar este comando.")
-        return
-    
     await event.respond(
         "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
         "Por favor, envía la URL de la transmisión para comenzar.",
@@ -191,10 +184,6 @@ async def show_links(event):
 # Comando para eliminar un enlace específico
 @bot.on(events.NewMessage(pattern='/eliminar_enlace'))
 async def delete_link(event):
-    if event.sender_id not in ALLOWED_USERS:
-        await event.respond("❗ No tienes permiso para usar este comando.")
-        return
-
     user_id = str(event.sender_id)
     link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
     if link and user_id in load_links() and link in load_links()[user_id]:
@@ -208,24 +197,55 @@ async def delete_link(event):
 async def show_status(event):
     await event.respond("✅ El bot está en funcionamiento y listo para grabar.")
 
-# Comando de ayuda
-@bot.on(events.NewMessage(pattern='/help'))
-async def help_command(event):
+# Comando para resetear enlaces
+@bot.on(events.NewMessage(pattern='/reset_links'))
+async def reset_links(event):
+    user_id = str(event.sender_id)
+    if user_id == "1170684259":  # Solo el admin puede usar este comando
+        os.remove(LINKS_FILE)
+        await event.respond("✅ Enlaces reseteados exitosamente.")
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
+
+# Manejador para comandos no válidos
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
+async def handle_invalid_commands(event):
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, /status o /reset_links.")
+
+@bot.on(events.NewMessage)
+async def process_url(event):
+    if event.text.startswith('/'):
+        return
+    
+    if event.text and is_valid_url(event.text):
+        add_link(str(event.sender_id), event.text)
+        await event.respond(f"🌐 URL guardada: {event.text}")
+
+        await event.respond(
+            "⚠️ <b>¡URL guardada!</b>\n\n"
+            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            parse_mode='html'
+        )
+    else:
+        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
+
+# Bienvenida
+@bot.on(events.NewMessage(pattern='/start'))
+async def send_welcome(event):
     await event.respond(
-        "🆘 <b>Comandos disponibles:</b>\n"
-        "/grabar - Iniciar grabación de una transmisión.\n"
-        "/mis_enlaces - Mostrar tus enlaces guardados.\n"
-        "/eliminar_enlace <enlace> - Eliminar un enlace guardado.\n"
-        "/status - Mostrar estado del bot.\n"
-        "/help - Mostrar esta ayuda.",
+        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
+        "Puedes iniciar una grabación enviando una URL válida.\n"
+        "Comandos:\n"
+        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
+        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
+        "• <b>/status</b> - Muestra el estado del bot.\n",
         parse_mode='html'
     )
 
-# Ejecución del bot
-async def main():
-    await bot.start()
-    await verificar_enlaces()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-    driver.quit()  # Asegúrate de que el driver se cierre al finalizar
+if __name__ == '__main__':
+    logging.info("Iniciando el bot de Telegram")
+    
+    bot.loop.create_task(verificar_enlaces())
+    bot.run_until_disconnected()
+    driver.quit()
