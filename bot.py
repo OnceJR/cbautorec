@@ -189,6 +189,8 @@ async def save_link(event):
         if is_valid_url(event.text):
             add_link(event.sender_id, event.text)
             await event.respond("✅ Enlace guardado para grabación.")
+        else:
+            await event.respond("❌ URL no válida. Por favor, envía una URL válida.")
 
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
@@ -215,6 +217,14 @@ async def delete_link(event):
 @bot.on(events.NewMessage(pattern='/status'))
 async def show_status(event):
     await event.respond("✅ El bot está en funcionamiento y listo para grabar.")
+
+@bot.on(events.NewMessage(pattern='/estado_grabacion'))
+async def check_recording_status(event):
+    if event.sender_id in is_recording:
+        status = "en modo grabación" if is_recording[event.sender_id] else "no en modo grabación"
+        await event.respond(f"📹 Actualmente estás {status}.")
+    else:
+        await event.respond("❗ No tienes un estado de grabación establecido.")
 
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
