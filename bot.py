@@ -1,12 +1,11 @@
-import asyncio
 import subprocess
+import time
 import os
 import logging
 from telethon import TelegramClient, events
+import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
@@ -14,20 +13,25 @@ import json
 API_ID = 24738183
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
-CHANNEL_ID = -2281927010  # ID del canal para el progreso (cambiar por el ID real)
 
-# Inicialización del cliente
-bot = TelegramClient('my_bot', API_ID, API_HASH)
+bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Configurar logs
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Inicializa el navegador
+chrome_options = webdriver.ChromeOptions()
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--disable-dev-shm-usage")
+driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 ADMIN_ID = 1170684259  # ID del administrador
 
-# Funciones para manejar enlaces
+# Cargar y guardar enlaces
 def load_links():
     if os.path.exists(LINKS_FILE):
         with open(LINKS_FILE, 'r') as f:
@@ -40,7 +44,7 @@ def save_links(links):
 
 def add_link(user_id, link):
     links = load_links()
-    user_id_str = str(user_id)
+    user_id_str = str(user_id)  # Convertir a string para guardar
     if user_id_str not in links:
         links[user_id_str] = []
     if link not in links[user_id_str]:
@@ -49,7 +53,7 @@ def add_link(user_id, link):
 
 def remove_link(user_id, link):
     links = load_links()
-    user_id_str = str(user_id)
+    user_id_str = str(user_id)  # Convertir a string para acceder
     if user_id_str in links and link in links[user_id_str]:
         links[user_id_str].remove(link)
         save_links(links)
@@ -63,31 +67,22 @@ def is_valid_url(url):
         return False
 
 # Extracción de enlace m3u8
-async def extract_last_m3u8_link(chaturbate_link):
+def extract_last_m3u8_link(chaturbate_link):
     try:
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-
-        driver = webdriver.Chrome(options=chrome_options)
-
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        
-        wait = WebDriverWait(driver, 10)
-        input_field = wait.until(EC.presence_of_element_located((By.NAME, "url")))
+        time.sleep(5)
+        input_field = driver.find_element(By.NAME, "url")
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
-        run_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]')))
+        run_button = driver.find_element(By.XPATH, '//button[span[text()="Run"]]')
         run_button.click()
-        
+        time.sleep(15)
         logging.info("Esperando que se procesen los enlaces...")
-        await asyncio.sleep(15)  # Esperar mientras se procesan
 
+        # Verificación de los enlaces m3u8
         m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
-        driver.quit()
-        
+        logging.info(f"Enlaces encontrados: {len(m3u8_links)}")
         if m3u8_links:
             return m3u8_links[-1].get_attribute('href')
         else:
@@ -95,45 +90,11 @@ async def extract_last_m3u8_link(chaturbate_link):
             return None
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
-        # Reintento de conexión si hubo un error
-        for attempt in range(3):  # Intentar 3 veces
-            try:
-                logging.info(f"Reintentando conexión, intento {attempt + 1}...")
-                driver = webdriver.Chrome(options=chrome_options)
-                driver.get("https://onlinetool.app/ext/m3u8_extractor")
-                # Repetir los pasos para extraer el enlace
-                wait = WebDriverWait(driver, 10)
-                input_field = wait.until(EC.presence_of_element_located((By.NAME, "url")))
-                input_field.clear()
-                input_field.send_keys(chaturbate_link)
+        return None
 
-                run_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]')))
-                run_button.click()
-
-                logging.info("Esperando que se procesen los enlaces...")
-                await asyncio.sleep(15)  # Esperar mientras se procesan
-
-                m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
-                driver.quit()
-
-                if m3u8_links:
-                    return m3u8_links[-1].get_attribute('href')
-                else:
-                    logging.warning("No se encontraron enlaces m3u8 en el reintento.")
-                    return None
-            except Exception as retry_exception:
-                logging.error(f"Error en el intento {attempt + 1}: {retry_exception}")
-                driver.quit()
-                await asyncio.sleep(5)  # Esperar antes de reintentar
-        return None  # Retornar None si todos los intentos fallan
-
-# Enviar actualización de progreso al canal
-async def send_progress_update(message):
-    await bot.send_message(CHANNEL_ID, message)
-
-# Subir archivos de forma independiente
-async def upload_and_delete_mp4_files():
-    while True:
+# Subir y eliminar archivos mp4
+def upload_and_delete_mp4_files():
+    try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
         
         for file in files:
@@ -143,55 +104,52 @@ async def upload_and_delete_mp4_files():
             
             if result.returncode == 0:
                 logging.info(f"Subida exitosa: {file}")
-                await send_progress_update(f"✅ Subida completada: {file}")
                 os.remove(file_path)
                 logging.info(f"Archivo eliminado: {file}")
             else:
                 logging.error(f"Error al subir {file}: {result.stderr}")
-                await send_progress_update(f"❌ Error al subir {file}: {result.stderr}")
-        
-        await asyncio.sleep(60)
+                
+    except Exception as e:
+        logging.error(f"Error en la función de subida y eliminación: {e}")
 
-# Descargar con yt-dlp
+# Descargar con yt-dlp (asíncrono)
 async def download_with_yt_dlp(m3u8_url, user_id):
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', f"{DOWNLOAD_PATH}%(title)s.%(ext)s"]
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
-        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
-        await send_progress_update(f"🔴 Iniciando grabación para: {m3u8_url}")
-        
+        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")  # Convierte user_id a entero
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
-        
         logging.info("Descarga completa.")
-        await send_progress_update(f"✅ Descarga completada para: {m3u8_url}")
+
+        # Llamada a la función de subida y eliminación
+        upload_and_delete_mp4_files()
         
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
-        await bot.send_message(int(user_id), f"❌ Error durante la descarga: {e}")
-        await send_progress_update(f"❌ Error durante la descarga: {e}")
+        await bot.send_message(int(user_id), f"❌ Error durante la descarga: {e}")  # Convierte user_id a entero
 
-# Verificación de enlaces y límite de tareas
+# Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
-    semaphore = asyncio.Semaphore(5)  # Limita a 5 descargas simultáneas
-    tasks = []
-
     while True:
         links = load_links()
+        tasks = []
         for user_id_str, user_links in links.items():
-            user_id = int(user_id_str)
+            user_id = int(user_id_str)  # Convertir a entero
             for link in user_links:
-                async with semaphore:
-                    m3u8_link = await extract_last_m3u8_link(link)
-                    if m3u8_link:
-                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id))
-                        tasks.append(task)
-        
+                m3u8_link = extract_last_m3u8_link(link)
+                if m3u8_link:
+                    tasks.append(download_with_yt_dlp(m3u8_link, user_id))
+                else:
+                    # Intenta extraer el enlace nuevamente si falló
+                    new_m3u8_link = extract_last_m3u8_link(link)
+                    if new_m3u8_link:
+                        tasks.append(download_with_yt_dlp(new_m3u8_link, user_id))
         if tasks:
             await asyncio.gather(*tasks)
         await asyncio.sleep(60)
 
-# Comando de inicio de monitoreo y grabación automática
+# Comando de inicio de monitoreo y grabación automática de una transmisión
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
     await event.respond(
@@ -219,26 +177,69 @@ async def delete_link(event):
         remove_link(user_id, link)
         await event.respond(f"✅ Enlace eliminado: {link}")
     else:
-        await event.respond("❌ Enlace no encontrado o no válido.")
+        await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
 
-# Comando para cerrar el bot
-@bot.on(events.NewMessage(pattern='/cerrar'))
-async def shutdown(event):
-    await event.respond("🔴 Cerrando el bot...")
-    await bot.disconnect()
+# Manejador para comandos no válidos
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace).*'))
+async def handle_invalid_commands(event):
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces o /eliminar_enlace.")
 
-# Comando para detener la grabación
-@bot.on(events.NewMessage(pattern='/detener'))
-async def stop_recording(event):
-    # Aquí implementas la lógica para detener la grabación
-    await event.respond("🔴 Grabación detenida.")
+@bot.on(events.NewMessage)
+async def process_url(event):
+    if event.text.startswith('/'):
+        return
+    
+    if event.text and is_valid_url(event.text):
+        add_link(str(event.sender_id), event.text)
+        await event.respond(f"🌐 URL guardada: {event.text}")
 
-# Comenzar el bot y las tareas
-async def main():
-    await bot.start()
-    await asyncio.gather(
-        verificar_enlaces(),
-        upload_and_delete_mp4_files(),
+        await event.respond(
+            "⚠️ <b>¡URL guardada!</b>\n\n"
+            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            parse_mode='html'
+        )
+    else:
+        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
+
+# Bienvenida
+@bot.on(events.NewMessage(pattern='/start'))
+async def send_welcome(event):
+    await event.respond(
+        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
+        "Puedes iniciar una grabación enviando una URL válida.\n"
+        "Comandos:\n"
+        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
+        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado."
     )
 
-asyncio.run(main())
+# Comando del admin para mostrar otros comandos
+@bot.on(events.NewMessage(pattern='/admin'))
+async def admin_commands(event):
+    if event.sender_id == ADMIN_ID:
+        await event.respond(
+            "⚙️ <b>Comandos de administrador:</b>\n"
+            "• <b>/status</b> - Estado del bot.\n"
+            "• <b>/reset_links</b> - Reiniciar enlaces."
+        )
+
+# Comando para el estado del bot
+@bot.on(events.NewMessage(pattern='/status'))
+async def status(event):
+    if event.sender_id == ADMIN_ID:
+        await event.respond("✅ El bot está funcionando correctamente.")
+
+# Comando para reiniciar enlaces
+@bot.on(events.NewMessage(pattern='/reset_links'))
+async def reset_links(event):
+    if event.sender_id == ADMIN_ID:
+        save_links({})
+        await event.respond("🔄 Todos los enlaces han sido eliminados.")
+
+# Iniciar el bot
+async def main():
+    await bot.start()
+    await verificar_enlaces()
+
+if __name__ == '__main__':
+    asyncio.run(main())
