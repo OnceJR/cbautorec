@@ -1,4 +1,4 @@
-import subprocess 
+import subprocess
 import time
 import os
 import logging
@@ -45,7 +45,7 @@ def save_links(links):
 
 def add_link(user_id, link):
     links = load_links()
-    user_id_str = str(user_id)  # Convertir a string para guardar
+    user_id_str = str(user_id)
     if user_id_str not in links:
         links[user_id_str] = []
     if link not in links[user_id_str]:
@@ -54,7 +54,7 @@ def add_link(user_id, link):
 
 def remove_link(user_id, link):
     links = load_links()
-    user_id_str = str(user_id)  # Convertir a string para acceder
+    user_id_str = str(user_id)
     if user_id_str in links and link in links[user_id_str]:
         links[user_id_str].remove(link)
         save_links(links)
@@ -177,6 +177,14 @@ async def handle_grabar(event):
             "Por favor, envía la URL de la transmisión para comenzar.",
             parse_mode='html'
         )
+        
+        @bot.on(events.NewMessage)
+        async def save_link(event):
+            if is_valid_url(event.text):
+                add_link(event.sender_id, event.text)
+                await event.respond("✅ Enlace guardado para grabación.")
+                bot.remove_event_handler(save_link)  # Remueve el handler para evitar múltiples enlaces
+
     else:
         await event.respond("❗ No tienes permiso para usar este comando.")
 
