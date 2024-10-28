@@ -15,7 +15,7 @@ API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 
 # Lista de usuarios permitidos (agrega aquí los IDs de los usuarios permitidos)
-ALLOWED_USERS = {1170684259, 123456789}  # Reemplaza con los IDs de los usuarios permitidos
+ALLOWED_USERS = {1170684259, 1218594540}  # Reemplaza con los IDs de los usuarios permitidos
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
