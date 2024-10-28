@@ -13,6 +13,7 @@ import json
 API_ID = 24738183
 API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
+CHANNEL_ID = -2281927010  # ID del canal para el progreso (cambiar por el ID real)
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -91,6 +92,10 @@ async def extract_last_m3u8_link(chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
+# Enviar actualización de progreso al canal
+async def send_progress_update(message):
+    await bot.send_message(CHANNEL_ID, message)
+
 # Subir archivos de forma independiente
 async def upload_and_delete_mp4_files():
     while True:
@@ -103,10 +108,12 @@ async def upload_and_delete_mp4_files():
             
             if result.returncode == 0:
                 logging.info(f"Subida exitosa: {file}")
+                await send_progress_update(f"✅ Subida completada: {file}")
                 os.remove(file_path)
                 logging.info(f"Archivo eliminado: {file}")
             else:
                 logging.error(f"Error al subir {file}: {result.stderr}")
+                await send_progress_update(f"❌ Error al subir {file}: {result.stderr}")
         
         await asyncio.sleep(60)
 
@@ -116,13 +123,16 @@ async def download_with_yt_dlp(m3u8_url, user_id):
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
         await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
+        await send_progress_update(f"🔴 Iniciando grabación para: {m3u8_url}")
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
         logging.info("Descarga completa.")
+        await send_progress_update(f"✅ Descarga completada para: {m3u8_url}")
         
     except Exception as e:
         logging.error(f"Error durante la descarga: {e}")
         await bot.send_message(int(user_id), f"❌ Error durante la descarga: {e}")
+        await send_progress_update(f"❌ Error durante la descarga: {e}")
 
 # Verificación de enlaces y límite de tareas
 async def verificar_enlaces():
