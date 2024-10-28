@@ -183,16 +183,16 @@ async def handle_grabar(event):
     else:
         await event.respond("❗ No tienes permiso para usar este comando.")
 
-# Comando para guardar enlaces (modificado)
+# Comando para guardar enlaces
 @bot.on(events.NewMessage)
 async def save_link(event):
-    if event.sender_id in AUTHORIZED_USERS:  # Verifica si el usuario está autorizado
-        if event.sender_id in is_recording and is_recording[event.sender_id]:  # Verifica si el usuario está en modo grabación
-            if is_valid_url(event.text):
-                add_link(event.sender_id, event.text)
-                await event.respond("✅ Enlace guardado para grabación.")
-            else:
-                await event.respond("❌ URL no válida. Por favor, envía una URL válida.")
+    # Verificar si el mensaje es un enlace y si el usuario está autorizado
+    if event.sender_id in AUTHORIZED_USERS:
+        if is_valid_url(event.text):
+            add_link(event.sender_id, event.text)
+            await event.respond("✅ Enlace guardado para grabación.")
+        else:
+            await event.respond("❌ URL no válida. Por favor, envía una URL válida.")
     else:
         await event.respond("❗ No tienes permiso para guardar enlaces.")
 
