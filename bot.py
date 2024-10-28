@@ -6,6 +6,8 @@ from telethon import TelegramClient, events
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
@@ -68,17 +70,20 @@ async def extract_last_m3u8_link(chaturbate_link):
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--disable-dev-shm-usage")
         driver = webdriver.Chrome(options=chrome_options)
-        
+
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        await asyncio.sleep(5)
-        input_field = driver.find_element(By.NAME, "url")
+        
+        # Espera explícita para el campo de entrada
+        wait = WebDriverWait(driver, 10)
+        input_field = wait.until(EC.presence_of_element_located((By.NAME, "url")))
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
-        run_button = driver.find_element(By.XPATH, '//button[span[text()="Run"]]')
+        run_button = wait.until(EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]')))
         run_button.click()
-        await asyncio.sleep(15)
+        
         logging.info("Esperando que se procesen los enlaces...")
+        await asyncio.sleep(15)  # Esto podría ser reemplazado por otra espera explícita si es necesario
 
         m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
         driver.quit()
@@ -124,8 +129,11 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
         await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
         await send_progress_update(f"🔴 Iniciando grabación para: {m3u8_url}")
+        
+        # Usar subprocess para ejecutar yt-dlp
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
+        
         logging.info("Descarga completa.")
         await send_progress_update(f"✅ Descarga completada para: {m3u8_url}")
         
@@ -206,45 +214,12 @@ async def process_url(event):
     else:
         await event.respond("❗ Por favor, envía una URL válida de transmisión.")
 
-# Bienvenida
-@bot.on(events.NewMessage(pattern='/start'))
-async def send_welcome(event):
-    await event.respond(
-        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
-        "Puedes iniciar una grabación enviando una URL válida.\n"
-        "Comandos:\n"
-        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
-        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
-        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado."
-    )
-
-# Comando del admin para mostrar otros comandos
-@bot.on(events.NewMessage(pattern='/admin'))
-async def admin_commands(event):
-    if event.sender_id == ADMIN_ID:
-        await event.respond(
-            "⚙️ <b>Comandos de administrador:</b>\n"
-            "• <b>/status</b> - Estado del bot.\n"
-            "• <b>/reset_links</b> - Reiniciar enlaces."
-        )
-
-# Comando para el estado del bot
-@bot.on(events.NewMessage(pattern='/status'))
-async def status(event):
-    if event.sender_id == ADMIN_ID:
-        await event.respond("✅ Bot activo y en ejecución.")
-
-# Comando para resetear los enlaces guardados
-@bot.on(events.NewMessage(pattern='/reset_links'))
-async def reset_links(event):
-    if event.sender_id == ADMIN_ID:
-        save_links({})
-        await event.respond("🔄 Enlaces reiniciados correctamente.")
-
-# Iniciar el bot y tareas
 async def main():
-    await bot.start()
-    await asyncio.gather(verificar_enlaces(), upload_and_delete_mp4_files())
+    await asyncio.gather(
+        verificar_enlaces(),
+        upload_and_delete_mp4_files(),
+        bot.run_until_disconnected()
+    )
 
 if __name__ == '__main__':
     asyncio.run(main())
