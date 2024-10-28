@@ -29,7 +29,6 @@ driver = webdriver.Chrome(options=chrome_options)
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
-ADMIN_ID = 1170684259  # ID del administrador
 
 # Cargar y guardar enlaces
 def load_links():
@@ -179,10 +178,25 @@ async def delete_link(event):
     else:
         await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
 
+# Comando para mostrar el estado del bot
+@bot.on(events.NewMessage(pattern='/status'))
+async def show_status(event):
+    await event.respond("✅ El bot está en funcionamiento y listo para grabar.")
+
+# Comando para resetear enlaces
+@bot.on(events.NewMessage(pattern='/reset_links'))
+async def reset_links(event):
+    user_id = str(event.sender_id)
+    if user_id == "1170684259":  # Solo el admin puede usar este comando
+        os.remove(LINKS_FILE)
+        await event.respond("✅ Enlaces reseteados exitosamente.")
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
+
 # Manejador para comandos no válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace).*'))
+@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces o /eliminar_enlace.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, /status o /reset_links.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
@@ -210,36 +224,15 @@ async def send_welcome(event):
         "Comandos:\n"
         "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
-        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado."
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
+        "• <b>/status</b> - Muestra el estado del bot.\n"
+        "• <b>/reset_links</b> - Resetea todos los enlaces (solo para admin).",
+        parse_mode='html'
     )
 
-# Comando del admin para mostrar otros comandos
-@bot.on(events.NewMessage(pattern='/admin'))
-async def admin_commands(event):
-    if event.sender_id == ADMIN_ID:
-        await event.respond(
-            "⚙️ <b>Comandos de administrador:</b>\n"
-            "• <b>/status</b> - Estado del bot.\n"
-            "• <b>/reset_links</b> - Reiniciar enlaces."
-        )
-
-# Comando para el estado del bot
-@bot.on(events.NewMessage(pattern='/status'))
-async def status(event):
-    if event.sender_id == ADMIN_ID:
-        await event.respond("✅ El bot está funcionando correctamente.")
-
-# Comando para reiniciar enlaces
-@bot.on(events.NewMessage(pattern='/reset_links'))
-async def reset_links(event):
-    if event.sender_id == ADMIN_ID:
-        save_links({})
-        await event.respond("🔄 Todos los enlaces han sido eliminados.")
-
-# Iniciar el bot
-async def main():
-    await bot.start()
-    await verificar_enlaces()
-
 if __name__ == '__main__':
-    asyncio.run(main())
+    logging.info("Iniciando el bot de Telegram")
+    
+    bot.loop.create_task(verificar_enlaces())
+    bot.run_until_disconnected()
+    driver.quit()
