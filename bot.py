@@ -30,6 +30,8 @@ LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 
+AUTHORIZED_USERS = {1170684259, 1218594540}
+
 # Cargar y guardar enlaces
 def load_links():
     if os.path.exists(LINKS_FILE):
@@ -165,11 +167,14 @@ async def verificar_enlaces():
 # Comando de inicio de monitoreo y grabación automática de una transmisión
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    await event.respond(
-        "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
-        "Por favor, envía la URL de la transmisión para comenzar.",
-        parse_mode='html'
-    )
+    if event.sender_id in AUTHORIZED_USERS:
+        await event.respond(
+            "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
+            "Por favor, envía la URL de la transmisión para comenzar.",
+            parse_mode='html'
+        )
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
 
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
@@ -184,13 +189,16 @@ async def show_links(event):
 # Comando para eliminar un enlace específico
 @bot.on(events.NewMessage(pattern='/eliminar_enlace'))
 async def delete_link(event):
-    user_id = str(event.sender_id)
-    link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
-    if link and user_id in load_links() and link in load_links()[user_id]:
-        remove_link(user_id, link)
-        await event.respond(f"✅ Enlace eliminado: {link}")
+    if event.sender_id in AUTHORIZED_USERS:
+        user_id = str(event.sender_id)
+        link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
+        if link and user_id in load_links() and link in load_links()[user_id]:
+            remove_link(user_id, link)
+            await event.respond(f"✅ Enlace eliminado: {link}")
+        else:
+            await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
     else:
-        await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
+        await event.respond("❗ No tienes permiso para usar este comando.")
 
 # Comando para mostrar el estado del bot
 @bot.on(events.NewMessage(pattern='/status'))
