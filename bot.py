@@ -147,22 +147,26 @@ async def download_with_yt_dlp(m3u8_url, user_id):
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
-        links = load_links()
+        links = load_links()  # Carga los enlaces guardados
         tasks = []
+        processed_links = {}  # Diccionario para almacenar enlaces ya procesados
+
         for user_id_str, user_links in links.items():
-            user_id = int(user_id_str)  # Convertir a entero
+            user_id = int(user_id_str)  # Convierte el user_id a entero
             for link in user_links:
-                m3u8_link = extract_last_m3u8_link(link)
-                if m3u8_link:
-                    tasks.append(download_with_yt_dlp(m3u8_link, user_id))
+                # Evita duplicados y asigna el mismo archivo si ya está en proceso
+                if link in processed_links:
+                    tasks.append(processed_links[link])
                 else:
-                    # Intenta extraer el enlace nuevamente si falló
-                    new_m3u8_link = extract_last_m3u8_link(link)
-                    if new_m3u8_link:
-                        tasks.append(download_with_yt_dlp(new_m3u8_link, user_id))
+                    m3u8_link = extract_last_m3u8_link(link)
+                    if m3u8_link:
+                        # Crea una tarea y la agrega al diccionario de enlaces procesados
+                        task = download_with_yt_dlp(m3u8_link, user_id)
+                        tasks.append(task)
+                        processed_links[link] = task  # Asocia el enlace con la tarea creada
         if tasks:
             await asyncio.gather(*tasks)
-        await asyncio.sleep(60)
+        await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
 
 # Comando de inicio de monitoreo y grabación automática de una transmisión
 @bot.on(events.NewMessage(pattern='/grabar'))
