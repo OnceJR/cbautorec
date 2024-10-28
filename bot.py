@@ -29,7 +29,6 @@ driver = webdriver.Chrome(options=chrome_options)
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
-CHANNEL_LOG = '@YourLogChannel'  # Cambia a tu canal de logs
 
 # Cargar y guardar enlaces
 def load_links():
@@ -93,7 +92,7 @@ def extract_last_m3u8_link(chaturbate_link):
         return None
 
 # Subir y eliminar archivos mp4
-def upload_and_delete_mp4_files(user_id):
+async def upload_and_delete_mp4_files(user_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
         
@@ -199,13 +198,25 @@ async def reset_links(event):
 # Manejador para comandos no válidos
 @bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, o /status.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, /status o /reset_links.")
 
-# Iniciar el bot
+@bot.on(events.NewMessage)
+async def process_url(event):
+    if event.text.startswith('/'):
+        return
+    
+    user_id = event.sender_id
+    if is_valid_url(event.text):
+        add_link(user_id, event.text)
+        await event.respond("✅ Enlace guardado exitosamente.")
+    else:
+        await event.respond("❌ Enlace no válido. Por favor, envía un enlace de Chaturbate.")
+
 async def main():
     await bot.start()
-    await bot.send_message(CHANNEL_LOG, "🔄 El bot se ha iniciado.")
-    await verificar_enlaces()
+    asyncio.create_task(verificar_enlaces())
+    print("Bot iniciado.")
+    await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     asyncio.run(main())
