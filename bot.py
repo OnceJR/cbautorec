@@ -103,15 +103,27 @@ async def upload_and_delete_mp4_files(user_id):
             
             if result.returncode == 0:
                 logging.info(f"Subida exitosa: {file}")
-                file_size = os.path.getsize(file_path) / (1024 * 1024)  # Tamaño en MB
-                await bot.send_message(user_id, f"✅ Video subido: {file}\nTamaño: {file_size:.2f} MB\nEnlace: {GDRIVE_PATH}/{file}")
+
+                # Crear enlace compartido
+                share_command = ["rclone", "link", GDRIVE_PATH + file]
+                share_result = subprocess.run(share_command, capture_output=True, text=True)
+                
+                if share_result.returncode == 0:
+                    shared_link = share_result.stdout.strip()
+                    await bot.send_message(int(user_id), f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+                else:
+                    logging.error(f"Error al crear enlace compartido para {file}: {share_result.stderr}")
+                    await bot.send_message(int(user_id), f"❌ Error al crear enlace compartido para: {file}")
+                
                 os.remove(file_path)
                 logging.info(f"Archivo eliminado: {file}")
             else:
                 logging.error(f"Error al subir {file}: {result.stderr}")
-                
+                await bot.send_message(int(user_id), f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
+
     except Exception as e:
         logging.error(f"Error en la función de subida y eliminación: {e}")
+        await bot.send_message(int(user_id), f"❌ Error en la función de subida: {e}")  # Notificar al usuario
 
 # Descargar con yt-dlp (asíncrono)
 async def download_with_yt_dlp(m3u8_url, user_id):
@@ -205,18 +217,36 @@ async def process_url(event):
     if event.text.startswith('/'):
         return
     
-    user_id = event.sender_id
-    if is_valid_url(event.text):
-        add_link(user_id, event.text)
-        await event.respond("✅ Enlace guardado exitosamente.")
+    if event.text and is_valid_url(event.text):
+        add_link(str(event.sender_id), event.text)
+        await event.respond(f"🌐 URL guardada: {event.text}")
+
+        await event.respond(
+            "⚠️ <b>¡URL guardada!</b>\n\n"
+            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            parse_mode='html'
+        )
     else:
-        await event.respond("❌ Enlace no válido. Por favor, envía un enlace de Chaturbate.")
+        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
 
-async def main():
-    await bot.start()
-    asyncio.create_task(verificar_enlaces())
-    print("Bot iniciado.")
-    await bot.run_until_disconnected()
+# Bienvenida
+@bot.on(events.NewMessage(pattern='/start'))
+async def send_welcome(event):
+    await event.respond(
+        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
+        "Puedes iniciar una grabación enviando una URL válida.\n"
+        "Comandos:\n"
+        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
+        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
+        "• <b>/status</b> - Muestra el estado del bot.\n"
+        "• <b>/reset_links</b> - Resetea todos los enlaces (solo para admin).",
+        parse_mode='html'
+    )
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    logging.info("Iniciando el bot de Telegram")
+    
+    bot.loop.create_task(verificar_enlaces())
+    bot.run_until_disconnected()
+    driver.quit()
