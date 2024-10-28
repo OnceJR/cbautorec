@@ -1,9 +1,8 @@
+import asyncio
 import subprocess
-import time
 import os
 import logging
 from telethon import TelegramClient, events
-import asyncio
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -17,7 +16,8 @@ API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
 BOT_TOKEN = "7882998171:AAGF6p9RYqMlKuEw8Ssyk2ZTsBcD59Ree-c"
 CHANNEL_ID = -2281927010  # ID del canal para el progreso (cambiar por el ID real)
 
-bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
+# Inicialización del cliente
+bot = TelegramClient('my_bot', API_ID, API_HASH)
 
 # Configurar logs
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,7 +27,7 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 ADMIN_ID = 1170684259  # ID del administrador
 
-# Cargar y guardar enlaces
+# Funciones para manejar enlaces
 def load_links():
     if os.path.exists(LINKS_FILE):
         with open(LINKS_FILE, 'r') as f:
@@ -73,7 +73,6 @@ async def extract_last_m3u8_link(chaturbate_link):
 
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
         
-        # Espera explícita para el campo de entrada
         wait = WebDriverWait(driver, 10)
         input_field = wait.until(EC.presence_of_element_located((By.NAME, "url")))
         input_field.clear()
@@ -83,7 +82,7 @@ async def extract_last_m3u8_link(chaturbate_link):
         run_button.click()
         
         logging.info("Esperando que se procesen los enlaces...")
-        await asyncio.sleep(15)  # Esto podría ser reemplazado por otra espera explícita si es necesario
+        await asyncio.sleep(15)  # Esperar mientras se procesan
 
         m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
         driver.quit()
@@ -130,7 +129,6 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")
         await send_progress_update(f"🔴 Iniciando grabación para: {m3u8_url}")
         
-        # Usar subprocess para ejecutar yt-dlp
         process = await asyncio.create_subprocess_exec(*command_yt_dlp)
         await process.wait()
         
@@ -205,21 +203,18 @@ async def process_url(event):
     
     if event.text and is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
-        await event.respond(f"🌐 URL guardada: {event.text}")
-        await event.respond(
-            "⚠️ <b>¡URL guardada!</b>\n\n"
-            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
-            parse_mode='html'
-        )
+        await event.respond(f"✅ Enlace guardado: {event.text}")
     else:
-        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
+        await event.respond("❌ URL no válida.")
 
+# Función principal
 async def main():
-    await asyncio.gather(
-        verificar_enlaces(),
-        upload_and_delete_mp4_files(),
-        bot.run_until_disconnected()
-    )
+    async with bot:
+        await bot.start(bot_token=BOT_TOKEN)
+        await asyncio.gather(
+            verificar_enlaces(),
+            upload_and_delete_mp4_files()
+        )
 
 if __name__ == '__main__':
     asyncio.run(main())
