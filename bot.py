@@ -21,18 +21,9 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # Inicializa el navegador
 chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--headless")  # Ejecutar en modo sin cabeza
 chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--disable-gpu")  # Desactivar GPU
-chrome_options.add_argument("--disable-software-rasterizer")
-chrome_options.add_argument("--disable-dev-shm-usage")  # Usar /tmp para almacenamiento temporal
-chrome_options.add_argument("--disable-disk-cache")
-chrome_options.add_argument("--remote-debugging-port=9222")
-chrome_options.add_argument("--disable-setuid-sandbox")
-chrome_options.add_argument("--disable-accelerated-2d-canvas")
-chrome_options.add_argument("--disable-infobars")  # Desactivar las barras de información
-chrome_options.add_argument("--window-size=1920x1080")  # Tamaño de ventana
-chrome_options.binary_location = "/snap/bin/chromium"  # Ruta del binario de Chromium
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
