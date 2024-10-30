@@ -27,7 +27,7 @@ chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--disable-software-rasterizer")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-disk-cache")
-driver = webdriver.Chrome(executable_path='/snap/bin/chromium', options=chrome_options)
+driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
