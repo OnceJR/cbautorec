@@ -28,6 +28,7 @@ chrome_options.add_argument("--disable-software-rasterizer")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-disk-cache")
 driver = webdriver.Chrome(options=chrome_options)
+chrome_options.binary_location = "/snap/bin/chromium"
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
