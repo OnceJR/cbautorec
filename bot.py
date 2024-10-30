@@ -27,11 +27,10 @@ chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--disable-software-rasterizer")
 chrome_options.add_argument("--disable-dev-shm-usage")
 chrome_options.add_argument("--disable-disk-cache")
-
-# Especifica la ubicación del binario de Chromium
+chrome_options.add_argument("--remote-debugging-port=9222")  # Nueva opción
+chrome_options.add_argument("--disable-setuid-sandbox")     # Nueva opción
+chrome_options.add_argument("--disable-accelerated-2d-canvas")  # Nueva opción
 chrome_options.binary_location = "/snap/bin/chromium"
-
-# Crea el controlador de Chrome
 driver = webdriver.Chrome(options=chrome_options)
 
 LINKS_FILE = 'links.json'
