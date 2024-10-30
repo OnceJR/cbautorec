@@ -26,9 +26,6 @@ chrome_options.add_argument("--headless")
 chrome_options.add_argument("--disable-dev-shm-usage")
 driver = webdriver.Chrome(options=chrome_options)
 
-# Inicia el navegador con las opciones configuradas
-driver = webdriver.Chrome(options=chrome_options)
-
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
