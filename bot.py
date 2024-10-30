@@ -32,6 +32,8 @@ chrome_options.add_argument("--disable-setuid-sandbox")     # Nueva opción
 chrome_options.add_argument("--disable-accelerated-2d-canvas")  # Nueva opción
 chrome_options.binary_location = "/snap/bin/chromium"
 driver = webdriver.Chrome(options=chrome_options)
+chrome_options.add_argument("--enable-logging")
+chrome_options.add_argument("--v=1")
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
