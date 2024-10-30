@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # Inicializa el navegador
 chrome_options = webdriver.ChromeOptions()
-# chrome_options.add_argument("--headless")  # Ejecutar en modo sin cabeza
+chrome_options.add_argument("--headless")  # Ejecutar en modo sin cabeza
 chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--disable-gpu")  # Desactivar GPU
 chrome_options.add_argument("--disable-software-rasterizer")
