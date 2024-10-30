@@ -21,9 +21,12 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # Inicializa el navegador
 chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--no-sandbox")
 chrome_options.add_argument("--headless")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--disable-software-rasterizer")
 chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-disk-cache")
 driver = webdriver.Chrome(executable_path='/snap/bin/chromium', options=chrome_options)
 
 LINKS_FILE = 'links.json'
