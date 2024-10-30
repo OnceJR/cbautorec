@@ -5,6 +5,8 @@ import logging
 from telethon import TelegramClient, events
 import asyncio
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from urllib.parse import urlparse
 import json
@@ -20,11 +22,12 @@ bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Inicializa el navegador
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--disable-dev-shm-usage")
-driver = webdriver.Chrome(options=chrome_options)
+chrome_options = Options()
+chrome_options.add_argument("--no-sandbox")  # Agregar esta línea
+chrome_options.add_argument("--headless")     # Si deseas que sea sin cabeza
+chrome_options.binary_location = "/snap/bin/chromium"
+
+driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
