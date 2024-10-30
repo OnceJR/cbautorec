@@ -20,11 +20,11 @@ bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Inicializa el navegador
-chrome_options = webdriver.ChromeOptions()
-chrome_options.add_argument("--no-sandbox")
-chrome_options.add_argument("--headless")
-chrome_options.add_argument("--disable-dev-shm-usage")
-driver = webdriver.Chrome(options=chrome_options)
+options = webdriver.ChromeOptions()
+options.add_argument('--headless')
+options.add_argument('--disable-dev-shm-usage')
+options.add_argument('--no-sandbox')
+driver = webdriver.Chrome(options=options)
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
