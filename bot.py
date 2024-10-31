@@ -23,9 +23,10 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 
 # Inicializa el navegador
 chrome_options = Options()
-chrome_options.add_argument("--no-sandbox")  # Agregar esta línea
-chrome_options.add_argument("--headless")     # Si deseas que sea sin cabeza
-chrome_options.binary_location = "/snap/bin/chromium"
+chrome_options.add_argument("--no-sandbox")  # Evita el sandbox cuando se ejecuta como root
+chrome_options.add_argument("--headless")  # Ejecuta sin interfaz gráfica
+chrome_options.add_argument("--disable-dev-shm-usage")  # Usa /tmp en lugar de /dev/shm para memoria compartida
+chrome_options.add_argument("--remote-debugging-port=9222")  # Habilita un puerto para depuración remota
 
 driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
 
