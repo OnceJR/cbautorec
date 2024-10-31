@@ -173,16 +173,20 @@ async def verificar_enlaces():
             await asyncio.gather(*tasks)
         await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
 
-# Comando de inicio de monitoreo y grabación automática de una transmisión
+# Define si el mensaje es un comando y si el bot ha sido mencionado
+async def is_bot_mentioned(event):
+    return event.is_private or event.message.mentioned
+
+# Comando de inicio de monitoreo y grabación
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    if event.sender_id in AUTHORIZED_USERS:
+    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
         await event.respond(
             "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
             "Por favor, envía la URL de la transmisión para comenzar.",
             parse_mode='html'
         )
-        is_recording[event.sender_id] = True  # Marca al usuario como en modo grabación
+        is_recording[event.sender_id] = True
         
     else:
         await event.respond("❗ No tienes permiso para usar este comando.")
@@ -190,8 +194,7 @@ async def handle_grabar(event):
 # Comando para guardar enlaces
 @bot.on(events.NewMessage)
 async def save_link(event):
-    # Verificar si el mensaje es un enlace y si el usuario está autorizado
-    if event.sender_id in AUTHORIZED_USERS:
+    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
         if is_valid_url(event.text):
             add_link(event.sender_id, event.text)
             await event.respond("✅ Enlace guardado para grabación.")
@@ -203,12 +206,13 @@ async def save_link(event):
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
 async def show_links(event):
-    user_id = str(event.sender_id)
-    links = load_links().get(user_id, [])
-    if links:
-        await event.respond("📌 <b>Enlaces guardados:</b>\n" + "\n".join(links), parse_mode='html')
-    else:
-        await event.respond("No tienes enlaces guardados.")
+    if await is_bot_mentioned(event):
+        user_id = str(event.sender_id)
+        links = load_links().get(user_id, [])
+        if links:
+            await event.respond("📌 <b>Enlaces guardados:</b>\n" + "\n".join(links), parse_mode='html')
+        else:
+            await event.respond("No tienes enlaces guardados.")
 
 # Comando para eliminar un enlace específico
 @bot.on(events.NewMessage(pattern='/eliminar_enlace'))
