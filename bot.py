@@ -194,12 +194,16 @@ async def handle_grabar(event):
 # Comando para guardar enlaces
 @bot.on(events.NewMessage)
 async def save_link(event):
-    # Ignorar comandos que comienzan con '/'
-    if event.text.startswith('/'):
+    # Ignorar mensajes que no sean comandos ni mencionen al bot
+    if not await is_bot_mentioned(event) and not event.text.startswith('/'):
         return
-
-    # Procesar solo si el bot fue mencionado y el usuario está autorizado
-    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
+    
+    # Ignorar comandos que comienzan con '/' pero no son el comando actual
+    if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
+        return
+    
+    # Procesar solo si el usuario está autorizado
+    if event.sender_id in AUTHORIZED_USERS:
         if is_valid_url(event.text):
             add_link(event.sender_id, event.text)
             await event.respond("✅ Enlace guardado para grabación.")
