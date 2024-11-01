@@ -106,31 +106,31 @@ async def upload_and_delete_mp4_files(user_id):
         for file in files:
             file_path = os.path.join(DOWNLOAD_PATH, file)
             command = ["rclone", "copy", file_path, GDRIVE_PATH]
-            result = subprocess.run(command, capture_output=True, text=True)
             
-            if result.returncode == 0:
+            # Cambiamos subprocess.run por asyncio.create_subprocess_exec
+            process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode == 0:
                 logging.info(f"Subida exitosa: {file}")
 
                 # Crear enlace compartido
                 share_command = ["rclone", "link", GDRIVE_PATH + file]
-                share_result = subprocess.run(share_command, capture_output=True, text=True)
+                share_process = await asyncio.create_subprocess_exec(*share_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                share_stdout, share_stderr = await share_process.communicate()
                 
-                if share_result.returncode == 0:
-                    shared_link = share_result.stdout.strip()
+                if share_process.returncode == 0:
+                    shared_link = share_stdout.strip().decode('utf-8')
                     await bot.send_message(int(user_id), f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
                 else:
-                    logging.error(f"Error al crear enlace compartido para {file}: {share_result.stderr}")
+                    logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
                     await bot.send_message(int(user_id), f"❌ Error al crear enlace compartido para: {file}")
                 
                 os.remove(file_path)
                 logging.info(f"Archivo eliminado: {file}")
             else:
-                logging.error(f"Error al subir {file}: {result.stderr}")
+                logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
                 await bot.send_message(int(user_id), f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
-
-    except Exception as e:
-        logging.error(f"Error en la función de subida y eliminación: {e}")
-        await bot.send_message(int(user_id), f"❌ Error en la función de subida: {e}")  # Notificar al usuario
 
 # Descargar con yt-dlp (asíncrono)
 async def download_with_yt_dlp(m3u8_url, user_id):
@@ -152,27 +152,25 @@ async def download_with_yt_dlp(m3u8_url, user_id):
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
-        logging.info("Iniciando verificación de enlaces.")
         links = load_links()  # Carga los enlaces guardados
-        tasks = []
+        tasks = []  # Lista para almacenar las tareas de descarga en paralelo
         processed_links = {}  # Diccionario para almacenar enlaces ya procesados
 
         for user_id_str, user_links in links.items():
-            if user_id_str.isdigit():  # Validar si user_id es un número
-                user_id = int(user_id_str)
-                for link in user_links:
-                    # Evita duplicados y asigna el mismo archivo si ya está en proceso
-                    if link in processed_links:
-                        tasks.append(processed_links[link])
-                    else:
-                        m3u8_link = extract_last_m3u8_link(link)
-                        if m3u8_link:
-                            # Crea una tarea y la agrega al diccionario de enlaces procesados
-                            task = await download_with_yt_dlp(m3u8_link, user_id)  # Usa await aquí
-                            tasks.append(task)
-                            processed_links[link] = task  # Asocia el enlace con la tarea creada
+            user_id = int(user_id_str)
+            for link in user_links:
+                # Evita duplicados y asigna el mismo archivo si ya está en proceso
+                if link not in processed_links:
+                    m3u8_link = extract_last_m3u8_link(link)
+                    if m3u8_link:
+                        # Lanza la tarea de descarga en segundo plano
+                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id))
+                        tasks.append(task)  # Agrega la tarea al grupo de tareas para mantener seguimiento
+                        processed_links[link] = task  # Asocia el enlace con la tarea creada
+
         if tasks:
-            await asyncio.gather(*tasks)
+            await asyncio.gather(*tasks)  # Espera a que todas las tareas terminen
+
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
 
@@ -299,6 +297,6 @@ async def send_welcome(event):
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
     
-    bot.loop.create_task(verificar_enlaces())
+    bot.loop.create_task(verificar_enlaces())  # Lanza la verificación en paralelo
     bot.run_until_disconnected()
     driver.quit()
