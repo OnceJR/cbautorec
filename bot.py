@@ -139,13 +139,10 @@ async def download_with_yt_dlp(m3u8_url, user_id):
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
         await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")  # Convierte user_id a entero
         
-        # Crear el proceso asíncrono
         process = await asyncio.create_subprocess_exec(*command_yt_dlp, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        await process.wait()  # Esperar a que termine el proceso
+        await process.wait()
         
         logging.info("Descarga completa.")
-
-        # Llamada a la función de subida y eliminación
         await upload_and_delete_mp4_files(user_id)
         
     except Exception as e:
