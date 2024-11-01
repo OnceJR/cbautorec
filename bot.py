@@ -108,7 +108,11 @@ async def upload_and_delete_mp4_files(user_id):
             command = ["rclone", "copy", file_path, GDRIVE_PATH]
             
             # Cambiamos subprocess.run por asyncio.create_subprocess_exec
-            process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
             stdout, stderr = await process.communicate()
             
             if process.returncode == 0:
@@ -116,7 +120,11 @@ async def upload_and_delete_mp4_files(user_id):
 
                 # Crear enlace compartido
                 share_command = ["rclone", "link", GDRIVE_PATH + file]
-                share_process = await asyncio.create_subprocess_exec(*share_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                share_process = await asyncio.create_subprocess_exec(
+                    *share_command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
                 share_stdout, share_stderr = await share_process.communicate()
                 
                 if share_process.returncode == 0:
@@ -125,12 +133,22 @@ async def upload_and_delete_mp4_files(user_id):
                 else:
                     logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
                     await bot.send_message(int(user_id), f"❌ Error al crear enlace compartido para: {file}")
-                
-                os.remove(file_path)
-                logging.info(f"Archivo eliminado: {file}")
             else:
                 logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
                 await bot.send_message(int(user_id), f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
+                continue  # Saltar la eliminación del archivo si la subida falló
+            
+            # Solo eliminar el archivo si la subida fue exitosa
+            try:
+                os.remove(file_path)
+                logging.info(f"Archivo eliminado: {file}")
+            except Exception as e:
+                logging.error(f"Error al eliminar el archivo {file}: {e}")
+                await bot.send_message(int(user_id), f"❌ Error al eliminar el archivo: {file}")
+
+    except Exception as e:
+        logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
+        await bot.send_message(int(user_id), f"❌ Error en el proceso de subida y eliminación: {e}")
 
 # Descargar con yt-dlp (asíncrono)
 async def download_with_yt_dlp(m3u8_url, user_id):
