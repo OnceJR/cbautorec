@@ -152,6 +152,7 @@ async def download_with_yt_dlp(m3u8_url, user_id):
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
     while True:
+        logging.info("Iniciando verificación de enlaces.")
         links = load_links()  # Carga los enlaces guardados
         tasks = []
         processed_links = {}  # Diccionario para almacenar enlaces ya procesados
@@ -172,6 +173,7 @@ async def verificar_enlaces():
                             processed_links[link] = task  # Asocia el enlace con la tarea creada
         if tasks:
             await asyncio.gather(*tasks)
+        logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
 
 # Define si el mensaje es un comando y si el bot ha sido mencionado
@@ -261,7 +263,7 @@ async def reset_links(event):
 # Manejador para comandos no válidos
 @bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
 async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace, /status o /reset_links.")
+    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace o /status.")
 
 @bot.on(events.NewMessage)
 async def process_url(event):
