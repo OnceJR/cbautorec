@@ -168,14 +168,19 @@ async def download_with_yt_dlp(m3u8_url, user_id):
 async def verificar_enlaces():
     while True:
         links = load_links()  # Carga los enlaces guardados
+        if not links:
+            logging.warning("No se cargaron enlaces guardados.")
+            await asyncio.sleep(60)
+            continue
+
         tasks = []  # Lista para almacenar las tareas de descarga en paralelo
         processed_links = {}  # Diccionario para almacenar enlaces ya procesados
 
         for user_id_str, user_links in links.items():
             # Verificar si user_id_str es válido antes de convertirlo a int
-            if user_id_str is None:
-                logging.error("user_id_str es None. Verifica el origen de los enlaces guardados.")
-                continue  # Saltar al siguiente enlace si user_id_str es None
+            if not user_id_str or user_id_str == 'None':
+                logging.error(f"user_id_str inválido: '{user_id_str}'. Verifica el origen de los enlaces guardados.")
+                continue  # Saltar al siguiente enlace si user_id_str es inválido
 
             try:
                 user_id = int(user_id_str)
