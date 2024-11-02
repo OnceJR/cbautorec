@@ -37,6 +37,9 @@ GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 AUTHORIZED_USERS = {1170684259, 1218594540}
 is_recording = {}  # Diccionario para almacenar el estado de grabación por usuario
 
+# Diccionario para almacenar información de grabación por modelo
+grabaciones = {}
+
 # Cargar y guardar enlaces
 def load_links():
     if os.path.exists(LINKS_FILE):
