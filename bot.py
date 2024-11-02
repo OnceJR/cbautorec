@@ -279,7 +279,7 @@ async def verificar_enlaces():
                         continue  # Pasa al siguiente enlace
 
                     # Lanza la tarea de descarga en segundo plano
-                    task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id))
+                    task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo))
                     tasks.append(task)  # Agrega la tarea al grupo de tareas para mantener seguimiento
                     processed_links[link] = task  # Asocia el enlace con la tarea creada
 
