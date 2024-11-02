@@ -172,16 +172,31 @@ async def verificar_enlaces():
         processed_links = {}  # Diccionario para almacenar enlaces ya procesados
 
         for user_id_str, user_links in links.items():
-            user_id = int(user_id_str)
+            # Verificar si user_id_str es válido antes de convertirlo a int
+            if user_id_str is None:
+                logging.error("user_id_str es None. Verifica el origen de los enlaces guardados.")
+                continue  # Saltar al siguiente enlace si user_id_str es None
+
+            try:
+                user_id = int(user_id_str)
+            except ValueError as e:
+                logging.error(f"Error de conversión a int para user_id_str '{user_id_str}': {e}")
+                continue  # Saltar al siguiente enlace si la conversión falla
+
             for link in user_links:
                 # Evita duplicados y asigna el mismo archivo si ya está en proceso
                 if link not in processed_links:
                     m3u8_link = extract_last_m3u8_link(link)
-                    if m3u8_link:
-                        # Lanza la tarea de descarga en segundo plano
-                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id))
-                        tasks.append(task)  # Agrega la tarea al grupo de tareas para mantener seguimiento
-                        processed_links[link] = task  # Asocia el enlace con la tarea creada
+
+                    # Si no se obtiene un enlace m3u8 válido, omite el enlace actual
+                    if not m3u8_link:
+                        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+                        continue  # Pasa al siguiente enlace
+
+                    # Lanza la tarea de descarga en segundo plano
+                    task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id))
+                    tasks.append(task)  # Agrega la tarea al grupo de tareas para mantener seguimiento
+                    processed_links[link] = task  # Asocia el enlace con la tarea creada
 
         if tasks:
             await asyncio.gather(*tasks)  # Espera a que todas las tareas terminen
