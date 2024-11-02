@@ -2,7 +2,7 @@ import subprocess
 import time
 import os
 import logging
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, Button
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -151,18 +151,98 @@ async def upload_and_delete_mp4_files(user_id):
         await bot.send_message(int(user_id), f"❌ Error en el proceso de subida y eliminación: {e}")
 
 # Descargar con yt-dlp (asíncrono)
-async def download_with_yt_dlp(m3u8_url, user_id):
-    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', f"{DOWNLOAD_PATH}%(title)s.%(ext)s"]
+async def download_with_yt_dlp(m3u8_url, user_id, modelo):
+    output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}.mp4")
+    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     try:
-        logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url}")
+        logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
         await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")  # Convierte user_id a entero
-        process = await asyncio.create_subprocess_exec(*command_yt_dlp, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        await process.wait()
-        logging.info("Descarga completa.")
-        await upload_and_delete_mp4_files(user_id)
+
+        # Agregar a grabaciones
+        grabaciones[modelo] = {
+            'start_time': time.time(),
+            'file_path': output_file_path
+        }
+
+        process = await asyncio.create_subprocess_exec(
+            *command_yt_dlp,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode == 0:
+            logging.info(f"Descarga completa para {modelo}.")
+            await bot.send_message(int(user_id), f"✅ Grabación completa para {modelo}.")
+            await upload_and_delete_mp4_files(user_id)
+        else:
+            stderr = stderr.decode('utf-8')
+            logging.error(f"Error al descargar para {modelo}: {stderr}")
+            await bot.send_message(int(user_id), f"❌ Error al descargar para {modelo}: {stderr}")
     except Exception as e:
-        logging.error(f"Error durante la descarga: {e}")
-        await bot.send_message(int(user_id), f"❌ Error durante la descarga: {e}")  # Convierte user_id a entero
+        logging.error(f"Error durante la descarga para {modelo}: {e}")
+        await bot.send_message(int(user_id), f"❌ Error durante la descarga para {modelo}: {e}")
+    finally:
+        # Eliminar grabaciones si la descarga termina, ya sea por éxito o fallo
+        grabaciones.pop(modelo, None)
+
+# Función para obtener la información de la modelo
+async def obtener_informacion_modelo(modelo, user_id):
+    info = grabaciones.get(modelo)
+    if not info:
+        return f"{modelo} está 🔴 offline.", False
+
+    estado = "🟢 online"
+    tiempo_grabacion = time.time() - info['start_time']
+    # Obtener el tamaño del archivo
+    try:
+        tamano_bytes = os.path.getsize(info['file_path'])
+        tamano_MB = tamano_bytes / (1024 ** 2)
+    except OSError as e:
+        tamano_MB = 0
+        logging.error(f"Error al obtener el tamaño del archivo para {modelo}: {e}")
+
+    # Formatear el tiempo de grabación
+    horas, resto = divmod(int(tiempo_grabacion), 3600)
+    minutos, segundos = divmod(resto, 60)
+    tiempo_formateado = f"{horas}h {minutos}m {segundos}s"
+
+    mensaje = (
+        f"{modelo} está {estado}.\n"
+        f"En grabación: {tiempo_formateado}\n"
+        f"Tamaño del video: {tamano_MB:.2f} MB"
+    )
+    return mensaje, True
+
+# Función para enviar el mensaje con el botón inline
+@bot.on(events.NewMessage(pattern='/check_modelo'))
+async def check_modelo(event):
+    # Extracción del nombre de la modelo desde el mensaje (después del comando)
+    if len(event.raw_text.split()) < 2:
+        await event.respond("Por favor, proporciona el nombre de la modelo después del comando.")
+        return
+
+    nombre_modelo = event.raw_text.split()[1]
+    
+    # Crear el botón inline para mostrar el estado de la modelo
+    buttons = [
+        [Button.inline(f"Estado de {nombre_modelo}", data=f"estado_{nombre_modelo}")]
+    ]
+    await event.respond("Haz clic en el botón para ver el estado de la modelo:", buttons=buttons)
+
+# Manejo del evento de callback cuando se hace clic en el botón inline
+@bot.on(events.CallbackQuery(pattern=r"estado_(.+)"))
+async def callback_alert(event):
+    # Extraer el nombre de la modelo desde el data del botón
+    nombre_modelo = event.pattern_match.group(1)
+
+    # Obtener la información de la modelo
+    mensaje_alerta, encontrado = await obtener_informacion_modelo(nombre_modelo, event.sender_id)
+    if not encontrado:
+        mensaje_alerta = f"{nombre_modelo} está 🔴 offline."
+
+    # Mostrar la alerta emergente
+    await event.answer(mensaje_alerta, show_alert=True)
 
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
@@ -208,6 +288,41 @@ async def verificar_enlaces():
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
+
+# Función para enviar alertas emergentes
+async def alerta_emergente(modelo, estado, user_id):
+    if estado == 'online':
+        info = grabaciones.get(modelo)
+        if not info:
+            mensaje_alerta = f"{modelo} está 🟢 online."
+        else:
+            tiempo_grabacion = time.time() - info['start_time']
+            try:
+                tamano_bytes = os.path.getsize(info['file_path'])
+                tamano_MB = tamano_bytes / (1024 ** 2)
+            except OSError as e:
+                tamano_MB = 0
+                logging.error(f"Error al obtener el tamaño del archivo para {modelo}: {e}")
+
+            # Formatear el tiempo de grabación
+            horas, resto = divmod(int(tiempo_grabacion), 3600)
+            minutos, segundos = divmod(resto, 60)
+            tiempo_formateado = f"{horas}h {minutos}m {segundos}s"
+
+            mensaje_alerta = (
+                f"{modelo} está 🟢 online.\n"
+                f"En grabación: {tiempo_formateado}\n"
+                f"Tamaño del video: {tamano_MB:.2f} MB"
+            )
+    else:
+        mensaje_alerta = f"{modelo} está 🔴 offline."
+
+    # Mostrar la alerta emergente
+    await bot.send_message(int(user_id), mensaje_alerta)
+
+# Define si el mensaje es un comando y si el bot ha sido mencionado
+async def is_bot_mentioned(event):
+    return event.is_private or event.message.mentioned
 
 # Define si el mensaje es un comando y si el bot ha sido mencionado
 async def is_bot_mentioned(event):
