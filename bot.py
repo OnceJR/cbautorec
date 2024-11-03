@@ -139,7 +139,7 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
         return None
 
 # Subir y eliminar archivos mp4
-async def upload_and_delete_mp4_files(user_id):
+async def upload_and_delete_mp4_files(user_id, chat_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
         
@@ -169,13 +169,13 @@ async def upload_and_delete_mp4_files(user_id):
                 
                 if share_process.returncode == 0:
                     shared_link = share_stdout.strip().decode('utf-8')
-                    await bot.send_message(int(user_id), f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+                    await bot.send_message(chat_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
                 else:
                     logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
-                    await bot.send_message(int(user_id), f"❌ Error al crear enlace compartido para: {file}")
+                    await bot.send_message(chat_id, f"❌ Error al crear enlace compartido para: {file}")
             else:
                 logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
-                await bot.send_message(int(user_id), f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
+                await bot.send_message(chat_id, f"❌ Error al subir el archivo: {file}")  # Notificar en el grupo
                 continue  # Saltar la eliminación del archivo si la subida falló
             
             # Solo eliminar el archivo si la subida fue exitosa
@@ -184,28 +184,29 @@ async def upload_and_delete_mp4_files(user_id):
                 logging.info(f"Archivo eliminado: {file}")
             except Exception as e:
                 logging.error(f"Error al eliminar el archivo {file}: {e}")
-                await bot.send_message(int(user_id), f"❌ Error al eliminar el archivo: {file}")
+                await bot.send_message(chat_id, f"❌ Error al eliminar el archivo: {file}")
 
     except Exception as e:
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
-        await bot.send_message(int(user_id), f"❌ Error en el proceso de subida y eliminación: {e}")
+        await bot.send_message(chat_id, f"❌ Error en el proceso de subida y eliminación: {e}")
 
-# Descargar con yt-dlp (asíncrono) con título modificado
-async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link):
+async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     # Formatear la fecha y hora actual
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
+    
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
-        await bot.send_message(int(user_id), f"🔴 Iniciando grabación: {original_link}")
+        # Enviar el mensaje al chat original (grupo o privado)
+        await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
 
         # Agregar a grabaciones
         grabaciones[modelo] = {
-        'inicio': time.time(),
-        'file_path': output_file_path,
-        'user_id': user_id,
-    }
+            'inicio': time.time(),
+            'file_path': output_file_path,
+            'user_id': user_id,
+        }
 
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
@@ -216,15 +217,15 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link):
 
         if process.returncode == 0:
             logging.info(f"Descarga completa para {modelo}.")
-            await bot.send_message(int(user_id), f"✅ Grabación completa para {modelo}.")
-            await upload_and_delete_mp4_files(user_id)
+            await bot.send_message(chat_id, f"✅ Grabación completa para {modelo}.")
+            await upload_and_delete_mp4_files(user_id, chat_id)  # Asegúrate de pasar chat_id aquí
         else:
             stderr = stderr.decode('utf-8')
             logging.error(f"Error al descargar para {modelo}: {stderr}")
-            await bot.send_message(int(user_id), f"❌ Error al descargar para {modelo}: {stderr}")
+            await bot.send_message(chat_id, f"❌ Error al descargar para {modelo}: {stderr}")
     except Exception as e:
         logging.error(f"Error durante la descarga para {modelo}: {e}")
-        await bot.send_message(int(user_id), f"❌ Error durante la descarga para {modelo}: {e}")
+        await bot.send_message(chat_id, f"❌ Error durante la descarga para {modelo}: {e}")
     finally:
         grabaciones.pop(modelo, None)
 
