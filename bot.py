@@ -333,7 +333,7 @@ async def verificar_enlaces():
                             continue  # No iniciar una nueva grabación
 
                         # Si no hay grabación activa, inicia la grabación
-                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo, link))
+                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id))  # Aquí se pasa user_id como chat_id
                         tasks.append(task)
                         processed_links[link] = task
                     else:
