@@ -327,7 +327,7 @@ async def verificar_enlaces():
                     if m3u8_link:
                         modelo = link.rstrip('/').split('/')[-1]
 
-                        # Si hay una grabación activa, informa al usuario pero no inicia una nueva grabación
+                        # Si hay una grabación activa, informa al usuario y no inicia una nueva grabación
                         if modelo in grabaciones and grabaciones[modelo]['grabando']:
                             await alerta_emergente(modelo, 'online', user_id)
                             continue  # No iniciar una nueva grabación
@@ -348,6 +348,7 @@ async def verificar_enlaces():
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)
+
     driver.quit()  # Asegúrate de cerrar el driver cuando termines.
 
 # Función para enviar alertas emergentes
