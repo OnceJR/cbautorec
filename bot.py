@@ -329,9 +329,16 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
-                    m3u8_link = extract_last_m3u8_link(link)
+                    m3u8_link = await extract_last_m3u8_link(link)  # Asegúrate de que esta función sea asíncrona
                     if m3u8_link:
                         modelo = link.rstrip('/').split('/')[-1]
+                        
+                        # Si hay una grabación activa, informa al usuario pero no inicia una nueva grabación
+                        if modelo in grabaciones and grabaciones[modelo]['grabando']:
+                            await alerta_emergente(modelo, 'online', user_id)
+                            continue  # No iniciar una nueva grabación
+
+                        # Si no hay grabación activa, inicia la grabación
                         task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo, link))
                         tasks.append(task)
                         processed_links[link] = task
