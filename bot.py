@@ -471,7 +471,7 @@ async def send_welcome(event):
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
         "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/check_modelo/b> <nombre_modelo> - Verifica el estado de la modelo (online u offline),
+        "• <b>/check_modelo/b> <nombre_modelo> - Verifica el estado de la modelo (online u offline)\n",
         parse_mode='html'
     )
 
