@@ -180,7 +180,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link):
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
-        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace guardado: {original_link}")
+        await bot.send_message(int(user_id), f"🔴 Iniciando grabación: {original_link}")
 
         # Agregar a grabaciones
         grabaciones[modelo] = {
@@ -449,17 +449,15 @@ async def process_url(event):
     if event.text.startswith('/'):
         return
     
-    if event.text and is_valid_url(event.text):
+    if event.text and await is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
-
         await event.respond(
             "⚠️ <b>¡URL guardada!</b>\n\n"
-            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            "Se ha guardado la URL correctamente. Ahora comenzó el monitoreo.",
             parse_mode='html'
         )
-    else:
-        await event.respond("❗ Por favor, envía una URL válida de transmisión.")
+    # Si la URL no es válida, no hacemos nada y simplemente ignoramos el mensaje.
 
 # Bienvenida
 @bot.on(events.NewMessage(pattern='/start'))
@@ -472,7 +470,7 @@ async def send_welcome(event):
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
         "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/check_modelo</b> <nombre_modelo> - Verifica el estado de la modelo (online u offline)\n",
+        "• <b>/check_modelo</b> - Verifica el estado de la modelo (online u offline)\n",
         parse_mode='html'
     )
 
