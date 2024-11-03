@@ -339,10 +339,6 @@ async def alerta_emergente(modelo, estado, user_id):
 async def is_bot_mentioned(event):
     return event.is_private or event.message.mentioned
 
-# Define si el mensaje es un comando y si el bot ha sido mencionado
-async def is_bot_mentioned(event):
-    return event.is_private or event.message.mentioned
-
 # Comando de inicio de monitoreo y grabación
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
@@ -423,10 +419,11 @@ async def reset_links(event):
     else:
         await event.respond("❗ No tienes permiso para usar este comando.")
 
-# Manejador para comandos no válidos
-@bot.on(events.NewMessage(pattern='^(?!/grabar|/start|/mis_enlaces|/eliminar_enlace|/status|/reset_links).*'))
-async def handle_invalid_commands(event):
-    await event.respond("⚠️ Comando no reconocido. Usa /grabar, /mis_enlaces, /eliminar_enlace o /status.")
+# Ignorar mensajes no válidos
+@bot.on(events.NewMessage)
+async def ignore_invalid_commands(event):
+    # No responder a mensajes que no coincidan con los comandos registrados
+    pass
 
 @bot.on(events.NewMessage)
 async def process_url(event):
@@ -452,10 +449,11 @@ async def send_welcome(event):
         "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
-        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de transmisión.\n"
+        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de una transmisión.\n"
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
-        "• <b>/status</b> - Muestra el estado del bot.\n",
+        "• <b>/status</b> - Muestra el estado del bot.\n"
+        "• <b>/check_modelo/b> <nombre_modelo> - Verifica el estado de la modelo (online u offline),
         parse_mode='html'
     )
 
