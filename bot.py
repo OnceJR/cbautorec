@@ -43,16 +43,19 @@ grabaciones = {}
 
 # Cargar y guardar enlaces
 def load_links():
+    """Carga los enlaces desde un archivo JSON."""
     if os.path.exists(LINKS_FILE):
         with open(LINKS_FILE, 'r') as f:
             return json.load(f)
     return {}
 
 def save_links(links):
+    """Guarda los enlaces en un archivo JSON."""
     with open(LINKS_FILE, 'w') as f:
         json.dump(links, f)
 
 def add_link(user_id, link):
+    """Agrega un enlace a la lista de un usuario."""
     links = load_links()
     user_id_str = str(user_id)
     if user_id_str not in links:
@@ -62,14 +65,29 @@ def add_link(user_id, link):
         save_links(links)
 
 def remove_link(user_id, link):
+    """Elimina un enlace de la lista de un usuario."""
     links = load_links()
     user_id_str = str(user_id)
     if user_id_str in links and link in links[user_id_str]:
         links[user_id_str].remove(link)
         save_links(links)
 
+def delete_link(link):
+    """Elimina un enlace de la lista de enlaces global."""
+    links = load_links()  # Cargar enlaces una sola vez
+    # Recorre todos los usuarios para eliminar el enlace
+    for user_links in links.values():
+        if link in user_links:
+            user_links.remove(link)
+            save_links(links)  # Guardar los enlaces actualizados
+            logging.info(f"Enlace eliminado: {link}")
+            return f"Enlace eliminado: {link}"
+    logging.warning(f"El enlace no existe: {link}")
+    return "El enlace no existe."
+
 # Validación de URL
 def is_valid_url(url):
+    """Valida si una URL es válida."""
     try:
         result = urlparse(url)
         return all([result.scheme, result.netloc])
