@@ -449,12 +449,12 @@ async def process_url(event):
     if event.text.startswith('/'):
         return
     
-    if event.text and await is_valid_url(event.text):
+    if event.text and is_valid_url(event.text):  # Eliminar await aquí
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
         await event.respond(
             "⚠️ <b>¡URL guardada!</b>\n\n"
-            "Se ha guardado la URL correctamente. Ahora comenzó el monitoreo.",
+            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
             parse_mode='html'
         )
     # Si la URL no es válida, no hacemos nada y simplemente ignoramos el mensaje.
