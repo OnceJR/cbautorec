@@ -221,7 +221,6 @@ async def obtener_informacion_modelo(modelo, user_id):
 # Función para enviar el mensaje con el botón inline
 @bot.on(events.NewMessage(pattern='/check_modelo'))
 async def check_modelo(event):
-    # Extracción del nombre de la modelo desde el mensaje (después del comando)
     if len(event.raw_text.split()) < 2:
         await event.respond("Por favor, proporciona el nombre de la modelo después del comando.")
         return
@@ -230,32 +229,22 @@ async def check_modelo(event):
     
     # Crear el botón inline para mostrar el estado de la modelo
     buttons = [
-        [Button.inline(f"Estado de {nombre_modelo}", data=f"estado_{nombre_modelo}")]
+        [Button.inline(f"Estado de {nombre_modelo}", data=f"alerta_modelo:{nombre_modelo}")]
     ]
     await event.respond("Haz clic en el botón para ver el estado de la modelo:", buttons=buttons)
 
 # Función que recibe el callback del botón y simula una alerta
-@bot.on(events.CallbackQuery(data=b"alerta_modelo"))
+@bot.on(events.CallbackQuery(data=lambda data: data.startswith(b"alerta_modelo")))
 async def callback_alert(event):
-    # Datos del evento
-    modelo = event.data.decode().split(':')[1]  # Extrae el nombre de la modelo del callback_data
-    estado = "online" if modelo in grabaciones else "offline"
+    # Extrae el nombre de la modelo desde el callback data
+    modelo_url = event.data.decode().split(':')[1]
+    modelo = modelo_url.split('/')[-1]  # Extrae el nombre de la modelo al final del enlace
 
-    # Construcción del mensaje de alerta
-    if estado == "online":
-        tiempo_grabacion = time.time() - grabaciones[modelo]["inicio"]
-        tamaño_video = grabaciones[modelo]["tamaño"]
-        mensaje_alerta = (
-            f"Modelo: {modelo} ✅\n"
-            f"Estado: Online\n"
-            f"Grabando: {int(tiempo_grabacion // 60)} min\n"
-            f"Tamaño: {tamaño_video / (1024 * 1024):.2f} MB"
-        )
-    else:
-        mensaje_alerta = f"Modelo: {modelo} ❌\nEstado: Offline"
+    # Obtener el estado actual de la modelo
+    mensaje_alerta, online = await obtener_informacion_modelo(modelo, event.sender_id)
 
-    # Enviar el mensaje como una notificación
-    await event.answer(mensaje_alerta, alert=True)  # Muestra el mensaje como una alerta
+    # Enviar el mensaje como una alerta emergente
+    await event.answer(mensaje_alerta, alert=True)
     
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
