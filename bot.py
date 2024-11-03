@@ -2,6 +2,7 @@ import subprocess
 import time
 import os
 import logging
+import glob
 from telethon import TelegramClient, events, Button
 import asyncio
 from selenium import webdriver
@@ -197,11 +198,21 @@ async def obtener_informacion_modelo(modelo, user_id):
         return f"{modelo} está 🔴 offline.", False
 
     estado = "🟢 online"
-    tiempo_grabacion = time.time() - info['start_time']
+    tiempo_grabacion = time.time() - info['inicio']
+
+    # Ruta del archivo .part
+    archivo_part = f"/root/cbautorec/{modelo}_{time.strftime('%Y%m%d_%H%M%S')}.mp4.part"  # Actualiza la forma de generar el nombre del archivo según tu lógica
+
     # Obtener el tamaño del archivo
     try:
-        tamano_bytes = os.path.getsize(info['file_path'])
-        tamano_MB = tamano_bytes / (1024 ** 2)
+        # Buscar archivos que coincidan con la convención de nombre del archivo .part
+        archivos = glob.glob(archivo_part)  # Buscar archivos que coincidan
+        if archivos:
+            tamano_bytes = os.path.getsize(archivos[0])  # Obtener el tamaño del primer archivo encontrado
+            tamano_MB = tamano_bytes / (1024 ** 2)  # Convertir a megabytes
+        else:
+            raise FileNotFoundError(f"Archivo no encontrado: {archivo_part}")
+
     except OSError as e:
         tamano_MB = 0
         logging.error(f"Error al obtener el tamaño del archivo para {modelo}: {e}")
