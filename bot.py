@@ -153,13 +153,15 @@ async def upload_and_delete_mp4_files(user_id):
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
         await bot.send_message(int(user_id), f"❌ Error en el proceso de subida y eliminación: {e}")
 
-# Descargar con yt-dlp (asíncrono)
-async def download_with_yt_dlp(m3u8_url, user_id, modelo):
-    output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}.mp4")
+# Descargar con yt-dlp (asíncrono) con título modificado
+async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link):
+    # Formatear la fecha y hora actual
+    fecha_hora = time.strftime("%Y%m%d_%H%M%S")
+    output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
-        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace: {m3u8_url}")  # Convierte user_id a entero
+        await bot.send_message(int(user_id), f"🔴 Iniciando grabación para el enlace guardado: {original_link}")
 
         # Agregar a grabaciones
         grabaciones[modelo] = {
@@ -186,7 +188,6 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo):
         logging.error(f"Error durante la descarga para {modelo}: {e}")
         await bot.send_message(int(user_id), f"❌ Error durante la descarga para {modelo}: {e}")
     finally:
-        # Eliminar grabaciones si la descarga termina, ya sea por éxito o fallo
         grabaciones.pop(modelo, None)
 
 # Función para obtener la información de la modelo
@@ -247,54 +248,49 @@ async def callback_alert(event):
     # Mostrar el mensaje sin alerta emergente
     await event.answer(mensaje_alerta)
 
-# Verificación y extracción periódica de enlaces m3u8
+# Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
     while True:
-        links = load_links()  # Carga los enlaces guardados
+        links = load_links()
         if not links:
             logging.warning("No se cargaron enlaces guardados.")
             await asyncio.sleep(60)
             continue
 
-        tasks = []  # Lista para almacenar las tareas de descarga en paralelo
-        processed_links = {}  # Diccionario para almacenar enlaces ya procesados
+        tasks = []
+        processed_links = {}
 
         for user_id_str, user_links in links.items():
-            # Verificar si user_id_str es válido antes de convertirlo a int
             if not user_id_str or user_id_str == 'None':
                 logging.error(f"user_id_str inválido: '{user_id_str}'. Verifica el origen de los enlaces guardados.")
-                continue  # Saltar al siguiente enlace si user_id_str es inválido
+                continue
 
             try:
                 user_id = int(user_id_str)
             except ValueError as e:
                 logging.error(f"Error de conversión a int para user_id_str '{user_id_str}': {e}")
-                continue  # Saltar al siguiente enlace si la conversión falla
+                continue
 
             for link in user_links:
-                # Evita duplicados y asigna el mismo archivo si ya está en proceso
                 if link not in processed_links:
                     m3u8_link = extract_last_m3u8_link(link)
                     if m3u8_link:
                         modelo = link.rstrip('/').split('/')[-1]
-                        # Lanza la tarea de descarga en segundo plano
-                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo))
-                        tasks.append(task)  # Agrega la tarea al grupo de tareas para mantener seguimiento
+                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo, link))
+                        tasks.append(task)
                         processed_links[link] = task
                     else:
                         modelo = link.rstrip('/').split('/')[-1]
-                        # Alerta de offline
                         if modelo in grabaciones:
-                            # Solo si la modelo estaba en grabaciones
                             await alerta_emergente(modelo, 'offline', user_id)
                             grabaciones.pop(modelo, None)
                         logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
 
         if tasks:
-            await asyncio.gather(*tasks)  # Espera a que todas las tareas terminen
+            await asyncio.gather(*tasks)
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
-        await asyncio.sleep(60)  # Espera 1 minuto antes de la siguiente verificación
+        await asyncio.sleep(60)
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
