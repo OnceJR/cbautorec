@@ -3,6 +3,7 @@ import time
 import os
 import logging
 import glob
+from collections import defaultdict
 from telethon import TelegramClient, events, Button
 import asyncio
 from selenium import webdriver
@@ -391,6 +392,7 @@ async def save_link(event):
             # No respondas nada si la URL es inválida
             return
     else:
+        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
         await event.respond("❗ No tienes permiso para guardar enlaces.")
 
 # Comando para mostrar enlaces guardados
@@ -453,8 +455,7 @@ async def process_url(event):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
         await event.respond(
-            "⚠️ <b>¡URL guardada!</b>\n\n"
-            "Se ha guardado la URL correctamente. Ahora puedes comenzar la grabación.",
+            "⚠️ <b>¡inicio de Monitoreo cada minuto...!</b>\n\n",
             parse_mode='html'
         )
     # Si la URL no es válida, no hacemos nada y simplemente ignoramos el mensaje.
@@ -463,7 +464,7 @@ async def process_url(event):
 @bot.on(events.NewMessage(pattern='/start'))
 async def send_welcome(event):
     await event.respond(
-        "👋 <b>¡Bienvenido al Bot de Grabación!</b>\n\n"
+        "👋 <b>¡Bot de Grabación Automatica!</b>\n\n"
         "Puedes iniciar una grabación enviando una URL válida.\n"
         "Comandos:\n"
         "• <b>/grabar</b> - Inicia monitoreo y grabación automática de una transmisión.\n"
