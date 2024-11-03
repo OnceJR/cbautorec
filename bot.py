@@ -244,8 +244,8 @@ async def callback_alert(event):
     if not encontrado:
         mensaje_alerta = f"{nombre_modelo} está 🔴 offline."
 
-    # Mostrar la alerta emergente
-    await event.answer(mensaje_alerta, show_alert=True)
+    # Mostrar el mensaje sin alerta emergente
+    await event.answer(mensaje_alerta)
 
 # Verificación y extracción periódica de enlaces m3u8
 async def verificar_enlaces():
