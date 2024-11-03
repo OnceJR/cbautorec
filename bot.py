@@ -3,6 +3,7 @@ import time
 import os
 import logging
 import glob
+import requests
 from collections import defaultdict
 from telethon import TelegramClient, events, Button
 import asyncio
@@ -95,25 +96,36 @@ def is_valid_url(url):
     except ValueError:
         return False
 
-# Extracción de enlace m3u8
-def extract_last_m3u8_link(chaturbate_link):
+# Extracción de enlace m3u8 con Selenium
+def extract_last_m3u8_link(driver, chaturbate_link):
     try:
+        # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        time.sleep(5)
-        input_field = driver.find_element(By.NAME, "url")
+        
+        # Esperar a que el campo de entrada esté disponible y enviar el enlace
+        input_field = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.NAME, "url"))
+        )
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
-        run_button = driver.find_element(By.XPATH, '//button[span[text()="Run"]]')
+        # Esperar y hacer clic en el botón "Run"
+        run_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]'))
+        )
         run_button.click()
-        time.sleep(15)
-        logging.info("Esperando que se procesen los enlaces...")
+        logging.info("Botón 'Run' clickeado, esperando a que se procesen los enlaces...")
 
-        # Verificación de los enlaces m3u8
-        m3u8_links = driver.find_elements(By.XPATH, '//pre/a')
-        logging.info(f"Enlaces encontrados: {len(m3u8_links)}")
+        # Esperar a que los enlaces m3u8 se generen y estén disponibles
+        m3u8_links = WebDriverWait(driver, 20).until(
+            EC.presence_of_all_elements_located((By.XPATH, '//pre/a'))
+        )
+
+        # Obtener el último enlace m3u8 si existe
         if m3u8_links:
-            return m3u8_links[-1].get_attribute('href')
+            last_m3u8_link = m3u8_links[-1].get_attribute('href')
+            logging.info(f"Enlace m3u8 extraído: {last_m3u8_link}")
+            return last_m3u8_link
         else:
             logging.warning("No se encontraron enlaces m3u8.")
             return None
