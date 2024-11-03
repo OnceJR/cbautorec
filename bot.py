@@ -135,17 +135,6 @@ def extract_last_m3u8_link(driver, chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
-# Uso del código para extraer enlace m3u8
-if __name__ == "__main__":
-    chaturbate_link = "https://chaturbate.com/example"  # Enlace de ejemplo de Chaturbate
-    driver = setup_driver()
-    m3u8_link = extract_last_m3u8_link(driver, chaturbate_link)
-    if m3u8_link:
-        print(f"Enlace m3u8 encontrado: {m3u8_link}")
-    else:
-        print("No se encontró enlace m3u8.")
-    driver.quit()
-
 # Subir y eliminar archivos mp4
 async def upload_and_delete_mp4_files(user_id):
     try:
@@ -306,6 +295,7 @@ async def callback_alert(event):
     
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
+    driver = setup_driver()  # Asegúrate de que `setup_driver()` retorne un driver válido.
     while True:
         links = load_links()
         if not links:
@@ -329,10 +319,10 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
-                    m3u8_link = await extract_last_m3u8_link(link)  # Asegúrate de que esta función sea asíncrona
+                    m3u8_link = await extract_last_m3u8_link(driver, link)  # Pasar el driver aquí
                     if m3u8_link:
                         modelo = link.rstrip('/').split('/')[-1]
-                        
+
                         # Si hay una grabación activa, informa al usuario pero no inicia una nueva grabación
                         if modelo in grabaciones and grabaciones[modelo]['grabando']:
                             await alerta_emergente(modelo, 'online', user_id)
@@ -354,6 +344,7 @@ async def verificar_enlaces():
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)
+    driver.quit()  # Asegúrate de cerrar el driver cuando termines.
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
