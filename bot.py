@@ -200,34 +200,36 @@ async def obtener_informacion_modelo(modelo, user_id):
 
     estado = "🟢 online"
     tiempo_grabacion = time.time() - info['inicio']
+    
+    # Buscar el archivo de la grabación en curso con extensión .mp4.part
+    archivo_en_grabacion = glob.glob(f"{info['file_path']}.part")
+    
+    # Inicializar el tamaño del archivo a 0 MB
+    tamano_MB = 0
 
-    # Ruta del archivo .part
-    archivo_part = f"/root/cbautorec/{modelo}_{time.strftime('%Y%m%d_%H%M%S')}.mp4.part"  # Actualiza la forma de generar el nombre del archivo según tu lógica
-
-    # Obtener el tamaño del archivo
     try:
-        # Buscar archivos que coincidan con la convención de nombre del archivo .part
-        archivos = glob.glob(archivo_part)  # Buscar archivos que coincidan
-        if archivos:
-            tamano_bytes = os.path.getsize(archivos[0])  # Obtener el tamaño del primer archivo encontrado
-            tamano_MB = tamano_bytes / (1024 ** 2)  # Convertir a megabytes
+        if archivo_en_grabacion:
+            # Si el archivo .part existe, obtener su tamaño
+            tamano_bytes = os.path.getsize(archivo_en_grabacion[0])
+            tamano_MB = tamano_bytes / (1024 ** 2)
         else:
-            raise FileNotFoundError(f"Archivo no encontrado: {archivo_part}")
-
+            # Si no existe el archivo .part, verificar si existe el archivo final
+            if os.path.exists(info['file_path']):
+                tamano_bytes = os.path.getsize(info['file_path'])
+                tamano_MB = tamano_bytes / (1024 ** 2)
+            else:
+                logging.error(f"Archivo no encontrado: {info['file_path']}.part o {info['file_path']}")
+                return f"{modelo} está online, pero el tamaño del archivo aún no está disponible.", True
     except OSError as e:
-        tamano_MB = 0
         logging.error(f"Error al obtener el tamaño del archivo para {modelo}: {e}")
 
-    # Formatear el tiempo de grabación
-    horas, resto = divmod(int(tiempo_grabacion), 3600)
-    minutos, segundos = divmod(resto, 60)
-    tiempo_formateado = f"{horas}h {minutos}m {segundos}s"
-
     mensaje = (
-        f"{modelo} está {estado}.\n"
-        f"En grabación: {tiempo_formateado}\n"
+        f"Modelo: {modelo}\n"
+        f"Estado: {estado}\n"
+        f"Tiempo de grabación: {int(tiempo_grabacion // 60)} min\n"
         f"Tamaño del video: {tamano_MB:.2f} MB"
     )
+    
     return mensaje, True
 
 # Función para enviar el mensaje con el botón inline
