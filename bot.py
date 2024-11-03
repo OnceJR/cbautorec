@@ -388,7 +388,8 @@ async def save_link(event):
             add_link(event.sender_id, event.text)
             await event.respond("✅ Enlace guardado para grabación.")
         else:
-            await event.respond("❌ URL no válida. Por favor, envía una URL válida.")
+            # No respondas nada si la URL es inválida
+            return
     else:
         await event.respond("❗ No tienes permiso para guardar enlaces.")
 
@@ -471,7 +472,7 @@ async def send_welcome(event):
         "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
         "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/check_modelo/b> <nombre_modelo> - Verifica el estado de la modelo (online u offline)\n",
+        "• <b>/check_modelo</b> <nombre_modelo> - Verifica el estado de la modelo (online u offline)\n",
         parse_mode='html'
     )
 
