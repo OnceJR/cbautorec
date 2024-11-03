@@ -138,7 +138,6 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
-# Subir y eliminar archivos mp4
 async def upload_and_delete_mp4_files(user_id, chat_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
@@ -169,13 +168,13 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
                 
                 if share_process.returncode == 0:
                     shared_link = share_stdout.strip().decode('utf-8')
-                    await bot.send_message(chat_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+                    await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")  # Envío por privado
                 else:
                     logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
-                    await bot.send_message(chat_id, f"❌ Error al crear enlace compartido para: {file}")
+                    await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")  # Notificar al usuario
             else:
                 logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
-                await bot.send_message(chat_id, f"❌ Error al subir el archivo: {file}")  # Notificar en el grupo
+                await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
                 continue  # Saltar la eliminación del archivo si la subida falló
             
             # Solo eliminar el archivo si la subida fue exitosa
@@ -184,11 +183,11 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
                 logging.info(f"Archivo eliminado: {file}")
             except Exception as e:
                 logging.error(f"Error al eliminar el archivo {file}: {e}")
-                await bot.send_message(chat_id, f"❌ Error al eliminar el archivo: {file}")
+                await bot.send_message(user_id, f"❌ Error al eliminar el archivo: {file}")  # Notificar al usuario
 
     except Exception as e:
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
-        await bot.send_message(chat_id, f"❌ Error en el proceso de subida y eliminación: {e}")
+        await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación: {e}")  # Notificar al usuario
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     # Formatear la fecha y hora actual
