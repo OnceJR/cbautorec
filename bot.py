@@ -166,9 +166,10 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link):
 
         # Agregar a grabaciones
         grabaciones[modelo] = {
-            'start_time': time.time(),
-            'file_path': output_file_path
-        }
+        'inicio': time.time(),
+        'file_path': output_file_path,
+        'user_id': user_id,
+    }
 
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
