@@ -135,6 +135,17 @@ def extract_last_m3u8_link(driver, chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
+# Uso del código para extraer enlace m3u8
+if __name__ == "__main__":
+    chaturbate_link = "https://chaturbate.com/example"  # Enlace de ejemplo de Chaturbate
+    driver = setup_driver()
+    m3u8_link = extract_last_m3u8_link(driver, chaturbate_link)
+    if m3u8_link:
+        print(f"Enlace m3u8 encontrado: {m3u8_link}")
+    else:
+        print("No se encontró enlace m3u8.")
+    driver.quit()
+
 # Subir y eliminar archivos mp4
 async def upload_and_delete_mp4_files(user_id):
     try:
@@ -494,4 +505,3 @@ if __name__ == '__main__':
     
     bot.loop.create_task(verificar_enlaces())  # Lanza la verificación en paralelo
     bot.run_until_disconnected()
-    driver.quit()
