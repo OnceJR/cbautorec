@@ -234,20 +234,29 @@ async def check_modelo(event):
     ]
     await event.respond("Haz clic en el botón para ver el estado de la modelo:", buttons=buttons)
 
-# Manejo del evento de callback cuando se hace clic en el botón inline
-@bot.on(events.CallbackQuery(pattern=r"estado_(.+)"))
+# Función que recibe el callback del botón y simula una alerta
+@bot.on(events.CallbackQuery(data=b"alerta_modelo"))
 async def callback_alert(event):
-    # Extraer el nombre de la modelo desde el data del botón
-    nombre_modelo = event.pattern_match.group(1)
+    # Datos del evento
+    modelo = event.data.decode().split(':')[1]  # Extrae el nombre de la modelo del callback_data
+    estado = "online" if modelo in grabaciones else "offline"
 
-    # Obtener la información de la modelo
-    mensaje_alerta, encontrado = await obtener_informacion_modelo(nombre_modelo, event.sender_id)
-    if not encontrado:
-        mensaje_alerta = f"{nombre_modelo} está 🔴 offline."
+    # Construcción del mensaje de alerta
+    if estado == "online":
+        tiempo_grabacion = time.time() - grabaciones[modelo]["inicio"]
+        tamaño_video = grabaciones[modelo]["tamaño"]
+        mensaje_alerta = (
+            f"Modelo: {modelo} ✅\n"
+            f"Estado: Online\n"
+            f"Grabando: {int(tiempo_grabacion // 60)} min\n"
+            f"Tamaño: {tamaño_video / (1024 * 1024):.2f} MB"
+        )
+    else:
+        mensaje_alerta = f"Modelo: {modelo} ❌\nEstado: Offline"
 
-    # Mostrar el mensaje sin alerta emergente
-    await event.answer(mensaje_alerta)
-
+    # Enviar el mensaje como una notificación
+    await event.answer(mensaje_alerta, alert=True)  # Muestra el mensaje como una alerta
+    
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
     while True:
