@@ -482,6 +482,44 @@ async def check_recording_status(event):
     else:
         await event.respond("❗ No tienes un estado de grabación establecido.")
 
+@bot.on(events.NewMessage(pattern='^clip (.+)'))
+async def clip(event):
+    url = event.pattern_match.group(1)
+    model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}.mp4"
+    
+    await event.reply("Iniciando la grabación del clip...")
+
+    # Comando para grabar el stream
+    record_command = f"ffmpeg -i {url} -t 30 -c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 128k {filename}"
+    
+    try:
+        process = subprocess.Popen(record_command, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            await event.reply("Error durante la grabación del clip.")
+            return
+    except Exception as e:
+        await event.reply(f"Ocurrió un error: {str(e)}")
+        return
+
+    await event.reply("Grabación completada. Subiendo a Google Drive...")
+
+    # Subida a Google Drive con rclone
+    rclone_command = f"rclone copy {filename} {GDRIVE_PATH}"
+    os.system(rclone_command)
+
+    # Envío del enlace al chat
+    drive_link = f"{GDRIVE_PATH}{model_name}_{timestamp}.mp4"
+    await event.reply(f"Clip grabado y subido a Google Drive: [Enlace a tu video]({drive_link})")
+
+    # Envío del clip al usuario
+    await bot.send_file(event.chat_id, filename, caption="Aquí tienes tu clip grabado.")
+
+    # Eliminar el archivo local después de subir
+    os.remove(filename)
+
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
 async def reset_links(event):
