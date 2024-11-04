@@ -6,6 +6,7 @@ import glob
 import requests
 from collections import defaultdict
 from telethon import TelegramClient, events, Button
+from moviepy.editor import VideoFileClip
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
