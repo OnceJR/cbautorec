@@ -41,6 +41,7 @@ def setup_driver():
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
+MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 
 AUTHORIZED_USERS = {1170684259, 1218594540}
 is_recording = {}  # Diccionario para almacenar el estado de grabación por usuario
@@ -146,7 +147,7 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
             file_path = os.path.join(DOWNLOAD_PATH, file)
             command = ["rclone", "copy", file_path, GDRIVE_PATH]
             
-            # Cambiamos subprocess.run por asyncio.create_subprocess_exec
+            # Ejecutar el proceso de subida a Google Drive
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
@@ -174,20 +175,43 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
                     await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")  # Notificar al usuario
             else:
                 logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
-                await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")  # Notificar al usuario
-                continue  # Saltar la eliminación del archivo si la subida falló
+                await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")
+                continue
             
-            # Solo eliminar el archivo si la subida fue exitosa
-            try:
-                os.remove(file_path)
-                logging.info(f"Archivo eliminado: {file}")
-            except Exception as e:
-                logging.error(f"Error al eliminar el archivo {file}: {e}")
-                await bot.send_message(user_id, f"❌ Error al eliminar el archivo: {file}")  # Notificar al usuario
+            # Envío del video al chat de Telegram
+            if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
+                await bot.send_file(chat_id, file_path, caption=f"📹 Video: {file}")
+            else:
+                await send_large_file(chat_id, file_path)
+            
+            # Eliminar archivo local tras envío exitoso
+            os.remove(file_path)
+            logging.info(f"Archivo eliminado: {file}")
 
     except Exception as e:
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
-        await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación: {e}")  # Notificar al usuario
+        await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación: {e}")
+
+async def send_large_file(chat_id, file_path):
+    from moviepy.editor import VideoFileClip
+    import tempfile
+    
+    video = VideoFileClip(file_path)
+    total_duration = video.duration  # Duración total en segundos
+    part_duration = 60 * 30  # 30 minutos por parte
+
+    current_time = 0
+    part_num = 1
+    while current_time < total_duration:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
+            part_path = temp_file.name
+            
+        video.subclip(current_time, min(current_time + part_duration, total_duration)).write_videofile(part_path)
+        await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
+        os.remove(part_path)  # Eliminar parte temporal
+
+        current_time += part_duration
+        part_num += 1
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     # Formatear la fecha y hora actual
