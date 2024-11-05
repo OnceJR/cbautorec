@@ -337,6 +337,146 @@ async def send_welcome(event):
         parse_mode='html'
     )
 
+# Comando de inicio de monitoreo y grabación
+@bot.on(events.NewMessage(pattern='/grabar'))
+async def handle_grabar(event):
+    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
+        await event.respond(
+            "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
+            "Por favor, envía la URL de la transmisión para comenzar.",
+            parse_mode='html'
+        )
+        is_recording[event.sender_id] = True
+        
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
+
+# Comando para guardar enlaces
+@bot.on(events.NewMessage)
+async def save_link(event):
+    # Ignorar mensajes que no sean comandos ni mencionen al bot
+    if not await is_bot_mentioned(event) and not event.text.startswith('/'):
+        return
+    
+    # Ignorar comandos que comienzan con '/' pero no son el comando actual
+    if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
+        return
+    
+    # Procesar solo si el usuario está autorizado
+    if event.sender_id in AUTHORIZED_USERS:
+        if is_valid_url(event.text):
+            add_link(event.sender_id, event.text)
+            await event.respond("✅ Enlace guardado para grabación.")
+        else:
+            # No respondas nada si la URL es inválida
+            return
+    else:
+        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
+        await event.respond("❗ No tienes permiso para guardar enlaces.")
+
+# Comando para mostrar enlaces guardados
+@bot.on(events.NewMessage(pattern='/mis_enlaces'))
+async def show_links(event):
+    if await is_bot_mentioned(event):
+        user_id = str(event.sender_id)
+        links = load_links().get(user_id, [])
+        if links:
+            await event.respond("📌 <b>Enlaces guardados:</b>\n" + "\n".join(links), parse_mode='html')
+        else:
+            await event.respond("No tienes enlaces guardados.")
+
+# Comando para eliminar un enlace específico
+@bot.on(events.NewMessage(pattern='/eliminar_enlace'))
+async def delete_link(event):
+    user_id = str(event.sender_id)
+    link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
+    if link and user_id in load_links() and link in load_links()[user_id]:
+        remove_link(user_id, link)
+        await event.respond(f"✅ Enlace eliminado: {link}")
+    else:
+        await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
+
+# Comando para mostrar el estado del bot
+@bot.on(events.NewMessage(pattern='/status'))
+async def show_status(event):
+    await event.respond("✅ El bot está en funcionamiento y listo para grabar.")
+
+@bot.on(events.NewMessage(pattern='/estado_grabacion'))
+async def check_recording_status(event):
+    if event.sender_id in is_recording:
+        status = "en modo grabación" if is_recording[event.sender_id] else "no en modo grabación"
+        await event.respond(f"📹 Actualmente estás {status}.")
+    else:
+        await event.respond("❗ No tienes un estado de grabación establecido.")
+
+@bot.on(events.NewMessage(pattern='^clip (.+)'))
+async def clip(event):
+    url = event.pattern_match.group(1)
+    model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}.mp4"
+    
+    await event.reply("Iniciando la grabación del clip...")
+
+    # Comando para grabar el stream
+    record_command = f"ffmpeg -i {url} -t 30 -c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 128k {filename}"
+    
+    try:
+        process = subprocess.Popen(record_command, shell=True)
+        process.wait()
+        if process.returncode != 0:
+            await event.reply("Error durante la grabación del clip.")
+            return
+    except Exception as e:
+        await event.reply(f"Ocurrió un error: {str(e)}")
+        return
+
+    await event.reply("Grabación completada. Subiendo a Google Drive...")
+
+    # Subida a Google Drive con rclone
+    rclone_command = f"rclone copy {filename} {GDRIVE_PATH}"
+    os.system(rclone_command)
+
+    # Envío del enlace al chat
+    drive_link = f"{GDRIVE_PATH}{model_name}_{timestamp}.mp4"
+    await event.reply(f"Clip grabado y subido a Google Drive: [Enlace a tu video]({drive_link})")
+
+    # Envío del clip al usuario
+    await bot.send_file(event.chat_id, filename, caption="Aquí tienes tu clip grabado.")
+
+    # Eliminar el archivo local después de subir
+    os.remove(filename)
+
+# Comando para resetear enlaces
+@bot.on(events.NewMessage(pattern='/reset_links'))
+async def reset_links(event):
+    user_id = str(event.sender_id)
+    if user_id == "1170684259":  # Solo el admin puede usar este comando
+        os.remove(LINKS_FILE)
+        await event.respond("✅ Enlaces reseteados exitosamente.")
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
+
+# Ignorar mensajes no válidos
+@bot.on(events.NewMessage)
+async def ignore_invalid_commands(event):
+    # No responder a mensajes que no coincidan con los comandos registrados
+    pass
+
+@bot.on(events.NewMessage)
+async def process_url(event):
+    if event.text.startswith('/'):
+        return
+    
+    if event.text and is_valid_url(event.text):
+        add_link(str(event.sender_id), event.text)
+        await event.respond(f"🌐 URL guardada: {event.text}")
+        await event.respond(
+            "⚠️ <b>¡inicio de Monitoreo cada minuto...!</b>\n\n",
+            parse_mode='html'
+        )
+    # Si la URL no es válida, no hacemos nada y simplemente ignoramos el mensaje.
+
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
     bot.loop.create_task(verificar_enlaces())
