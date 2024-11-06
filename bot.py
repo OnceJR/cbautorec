@@ -4,9 +4,10 @@ import os
 import logging
 import glob
 import requests
+import tempfile
 from collections import defaultdict
 from telethon import TelegramClient, events, Button
-from moviepy.editor import VideoFileClip
+from telethon.tl.types import DocumentAttributeVideo
 import asyncio
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -140,77 +141,146 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
 
+async def get_video_metadata(file_path):
+    # Ejecuta ffprobe para obtener la metadata del video
+    command = [
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries',
+        'stream=width,height,duration', '-of', 'default=noprint_wrappers=1', file_path
+    ]
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+
+    # Extrae los valores de la salida
+    if process.returncode == 0:
+        output = stdout.decode().splitlines()
+        width, height, duration = None, None, None
+        for line in output:
+            if line.startswith("width="):
+                width = int(line.split("=")[1])
+            elif line.startswith("height="):
+                height = int(line.split("=")[1])
+            elif line.startswith("duration="):
+                duration = int(float(line.split("=")[1]))
+        return duration, width, height
+    else:
+        logging.error(f"Error obteniendo metadata de video: {stderr.decode()}")
+        return None, None, None
+
 async def upload_and_delete_mp4_files(user_id, chat_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
-        
-        for file in files:
-            file_path = os.path.join(DOWNLOAD_PATH, file)
-            command = ["rclone", "copy", file_path, GDRIVE_PATH]
-            
-            # Ejecutar el proceso de subida a Google Drive
-            process = await asyncio.create_subprocess_exec(
-                *command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode == 0:
-                logging.info(f"Subida exitosa: {file}")
+        tasks = []  # Lista de tareas para procesar los archivos en paralelo
 
-                # Crear enlace compartido
-                share_command = ["rclone", "link", GDRIVE_PATH + file]
-                share_process = await asyncio.create_subprocess_exec(
-                    *share_command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                share_stdout, share_stderr = await share_process.communicate()
-                
-                if share_process.returncode == 0:
-                    shared_link = share_stdout.strip().decode('utf-8')
-                    await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")  # Envío por privado
-                else:
-                    logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
-                    await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")  # Notificar al usuario
-            else:
-                logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
-                await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")
-                continue
-            
-            # Envío del video al chat de Telegram
-            if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
-                await bot.send_file(chat_id, file_path, caption=f"📹 Video: {file}")
-            else:
-                await send_large_file(chat_id, file_path)
-            
-            # Eliminar archivo local tras envío exitoso
-            os.remove(file_path)
-            logging.info(f"Archivo eliminado: {file}")
+        for file in files:
+            tasks.append(asyncio.create_task(handle_file_upload(user_id, chat_id, file)))
+
+        # Esperar a que todas las tareas terminen sin bloquear el bot
+        await asyncio.gather(*tasks)
 
     except Exception as e:
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación: {e}")
 
-async def send_large_file(chat_id, file_path):
-    from moviepy.editor import VideoFileClip
-    import tempfile
+async def handle_file_upload(user_id, chat_id, file):
+    file_path = os.path.join(DOWNLOAD_PATH, file)
+    command = ["rclone", "copy", file_path, GDRIVE_PATH]
     
-    video = VideoFileClip(file_path)
-    total_duration = video.duration  # Duración total en segundos
+    try:
+        # Ejecutar el proceso de subida a Google Drive
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            logging.info(f"Subida exitosa: {file}")
+
+            # Crear enlace compartido
+            share_command = ["rclone", "link", GDRIVE_PATH + file]
+            share_process = await asyncio.create_subprocess_exec(
+                *share_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            share_stdout, share_stderr = await share_process.communicate()
+            
+            if share_process.returncode == 0:
+                shared_link = share_stdout.strip().decode('utf-8')
+                await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+            else:
+                logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
+                await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")
+        else:
+            logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
+            await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")
+            return
+
+        # Obtener duración y dimensiones del video usando ffmpeg
+        duration, width, height = await get_video_metadata(file_path)
+        if duration is None or width is None or height is None:
+            await bot.send_message(user_id, f"❌ Error al obtener metadatos del archivo: {file}")
+            return
+        
+        # Envío del video al chat de Telegram con soporte para streaming
+        if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
+            await bot.send_file(
+                chat_id, 
+                file_path, 
+                caption=f"📹 Video: {file}",
+                attributes=[DocumentAttributeVideo(
+                    duration=duration,
+                    w=width,
+                    h=height,
+                    supports_streaming=True
+                )]
+            )
+        else:
+            await send_large_file(chat_id, file_path)
+        
+        # Eliminar archivo local tras envío exitoso
+        os.remove(file_path)
+        logging.info(f"Archivo eliminado: {file}")
+
+    except Exception as e:
+        logging.error(f"Error en la función handle_file_upload para {file}: {e}")
+        await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
+
+async def send_large_file(chat_id, file_path, bot):
+    # Obtener duración del video con FFmpeg
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT
+    )
+    total_duration = float(result.stdout)  # Duración total en segundos
     part_duration = 60 * 30  # 30 minutos por parte
 
     current_time = 0
     part_num = 1
+
     while current_time < total_duration:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             part_path = temp_file.name
-            
-        video.subclip(current_time, min(current_time + part_duration, total_duration)).write_videofile(part_path)
-        await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
-        os.remove(part_path)  # Eliminar parte temporal
 
+        # Dividir video en partes usando FFmpeg
+        subprocess.run([
+            "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time), "-t", str(part_duration),
+            "-c", "copy", part_path
+        ])
+        
+        # Enviar el archivo de video por partes
+        await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
+
+        # Eliminar parte temporal después de enviarla
+        os.remove(part_path)
+
+        # Actualizar tiempos para la siguiente parte
         current_time += part_duration
         part_num += 1
 
@@ -232,25 +302,42 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             'user_id': user_id,
         }
 
+        # Ejecutar la descarga en segundo plano
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate()
+        
+        # Escuchar la salida mientras se ejecuta el proceso para detectar errores en tiempo real
+        async def read_output(stream, log_func):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                log_func(line.decode().strip())
+
+        # Crear tareas para leer stdout y stderr en paralelo
+        await asyncio.gather(
+            read_output(process.stdout, logging.info),
+            read_output(process.stderr, logging.error)
+        )
+
+        # Esperar a que el proceso termine
+        await process.wait()
 
         if process.returncode == 0:
             logging.info(f"Descarga completa para {modelo}.")
             await bot.send_message(chat_id, f"✅ Grabación completa para {modelo}.")
             await upload_and_delete_mp4_files(user_id, chat_id)  # Asegúrate de pasar chat_id aquí
         else:
-            stderr = stderr.decode('utf-8')
-            logging.error(f"Error al descargar para {modelo}: {stderr}")
-            await bot.send_message(chat_id, f"❌ Error al descargar para {modelo}: {stderr}")
+            await bot.send_message(chat_id, f"❌ Error al descargar para {modelo}: Código de error {process.returncode}")
+
     except Exception as e:
         logging.error(f"Error durante la descarga para {modelo}: {e}")
         await bot.send_message(chat_id, f"❌ Error durante la descarga para {modelo}: {e}")
     finally:
+        # Elimina la grabación del diccionario, independientemente del resultado
         grabaciones.pop(modelo, None)
 
 # Función para obtener la información de la modelo
@@ -323,15 +410,15 @@ async def callback_alert(event):
     
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
-    driver = setup_driver()  # Asegúrate de que `setup_driver()` retorne un driver válido.
     while True:
+        driver = setup_driver()  # Inicializar un nuevo driver en cada ciclo para evitar problemas de memoria
         links = load_links()
         if not links:
             logging.warning("No se cargaron enlaces guardados.")
             await asyncio.sleep(60)
             continue
 
-        tasks = []
+        tasks = []  # Lista de tareas para procesar los enlaces en paralelo
         processed_links = {}
 
         for user_id_str, user_links in links.items():
@@ -347,33 +434,34 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
-                    m3u8_link = await extract_last_m3u8_link(driver, link)  # Pasar el driver aquí
-                    if m3u8_link:
-                        modelo = link.rstrip('/').split('/')[-1]
-
-                        # Si hay una grabación activa, informa al usuario y no inicia una nueva grabación
-                        if modelo in grabaciones and grabaciones[modelo]['grabando']:
-                            await alerta_emergente(modelo, 'online', user_id)
-                            continue  # No iniciar una nueva grabación
-
-                        # Si no hay grabación activa, inicia la grabación
-                        task = asyncio.create_task(download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id))  # Aquí se pasa user_id como chat_id
-                        tasks.append(task)
-                        processed_links[link] = task
-                    else:
-                        modelo = link.rstrip('/').split('/')[-1]
-                        if modelo in grabaciones:
-                            await alerta_emergente(modelo, 'offline', user_id)
-                            grabaciones.pop(modelo, None)
-                        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+                    task = asyncio.create_task(process_link(driver, user_id, link))
+                    tasks.append(task)
+                    processed_links[link] = task
 
         if tasks:
             await asyncio.gather(*tasks)
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
+        driver.quit()  # Cerrar el driver en cada ciclo para liberar recursos
         await asyncio.sleep(60)
 
-    driver.quit()  # Asegúrate de cerrar el driver cuando termines.
+async def process_link(driver, user_id, link):
+    m3u8_link = await extract_last_m3u8_link(driver, link)
+    if m3u8_link:
+        modelo = link.rstrip('/').split('/')[-1]
+
+        # Verificar si ya hay una grabación activa
+        if modelo in grabaciones and grabaciones[modelo].get('grabando'):
+            await alerta_emergente(modelo, 'online', user_id)
+        else:
+            # Iniciar una nueva grabación en paralelo
+            await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
+    else:
+        modelo = link.rstrip('/').split('/')[-1]
+        if modelo in grabaciones:
+            await alerta_emergente(modelo, 'offline', user_id)
+            grabaciones.pop(modelo, None)
+        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
