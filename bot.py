@@ -306,30 +306,32 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.DEVNULL  # Ignorar los mensajes de error y advertencia
         )
         
-        # Escuchar la salida mientras se ejecuta el proceso para detectar errores en tiempo real
-        async def read_output(stream, log_func):
+        # Leer la salida de stdout para monitorear el progreso de la descarga
+        async def read_output(stream):
             while True:
                 line = await stream.readline()
                 if not line:
                     break
-                log_func(line.decode().strip())
+                # Extraer y mostrar el tamaño de la descarga si está disponible en la salida
+                decoded_line = line.decode().strip()
+                if "M" in decoded_line:  # Puedes ajustar esto según el formato de salida
+                    logging.info(f"Progreso de descarga: {decoded_line}")
 
-        # Crear tareas para leer stdout y stderr en paralelo
-        await asyncio.gather(
-            read_output(process.stdout, logging.info),
-            read_output(process.stderr, logging.error)
-        )
+        # Leer stdout en tiempo real para mostrar el tamaño
+        await read_output(process.stdout)
 
         # Esperar a que el proceso termine
         await process.wait()
 
         if process.returncode == 0:
-            logging.info(f"Descarga completa para {modelo}.")
-            await bot.send_message(chat_id, f"✅ Grabación completa para {modelo}.")
-            await upload_and_delete_mp4_files(user_id, chat_id)  # Asegúrate de pasar chat_id aquí
+            # Obtener el tamaño del archivo descargado
+            file_size = os.path.getsize(output_file_path) / (1024 ** 2)  # Tamaño en MB
+            logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
+            await bot.send_message(chat_id, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
+            await upload_and_delete_mp4_files(user_id, chat_id)
         else:
             await bot.send_message(chat_id, f"❌ Error al descargar para {modelo}: Código de error {process.returncode}")
 
@@ -518,22 +520,24 @@ async def save_link(event):
     # Ignorar mensajes que no sean comandos ni mencionen al bot
     if not await is_bot_mentioned(event) and not event.text.startswith('/'):
         return
-    
+
+    # Procesar solo si el usuario está autorizado
+    if event.sender_id not in AUTHORIZED_USERS:
+        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
+        await event.respond("❗ No tienes permiso para guardar enlaces.")
+        return
+
     # Ignorar comandos que comienzan con '/' pero no son el comando actual
     if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
         return
     
-    # Procesar solo si el usuario está autorizado
-    if event.sender_id in AUTHORIZED_USERS:
-        if is_valid_url(event.text):
-            add_link(event.sender_id, event.text)
-            await event.respond("✅ Enlace guardado para grabación.")
-        else:
-            # No respondas nada si la URL es inválida
-            return
+    # Guardar el enlace si es válido
+    if is_valid_url(event.text):
+        add_link(event.sender_id, event.text)
+        await event.respond("✅ Enlace guardado para grabación.")
     else:
-        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
-        await event.respond("❗ No tienes permiso para guardar enlaces.")
+        # No respondas nada si la URL es inválida
+        return
 
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
@@ -628,8 +632,15 @@ async def ignore_invalid_commands(event):
 async def process_url(event):
     if event.text.startswith('/'):
         return
+
+    # Verifica si el usuario está autorizado antes de procesar la URL
+    if event.sender_id not in AUTHORIZED_USERS:
+        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
+        await event.respond("❗ No tienes permiso para guardar enlaces.")
+        return
     
-    if event.text and is_valid_url(event.text):  # Eliminar await aquí
+    # Guardar el enlace si es válido
+    if event.text and is_valid_url(event.text):
         add_link(str(event.sender_id), event.text)
         await event.respond(f"🌐 URL guardada: {event.text}")
         await event.respond(
