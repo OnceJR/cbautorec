@@ -685,14 +685,21 @@ async def process_url(event):
         logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
-    
-    # Procesar el enlace si es válido y no está en proceso
+
+    # Procesar el enlace si es válido y no está en proceso o en el contexto de /clip
     if event.text and is_valid_url(event.text):
         url = event.text
+        
+        # Ignora el enlace si el usuario está en `pending_clips`
+        if event.sender_id in pending_clips:
+            return
+        
+        # Verifica si el enlace ya está en proceso de descarga
         if url in active_downloads:
             await event.respond("⚠️ Este enlace ya está en proceso de descarga.")
             return
 
+        # Guardar el enlace y notificar al usuario
         add_link(str(event.sender_id), url)
         await event.respond(f"🌐 URL guardada: {url}")
         await event.respond(
@@ -703,6 +710,22 @@ async def process_url(event):
         # Añadir el enlace a descargas activas y crear una nueva tarea
         active_downloads.add(url)
         asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
+
+async def handle_link(chat_id, user_id, url):
+    try:
+        # Lógica de verificación y descarga del enlace
+        await verify_and_download(url, user_id, chat_id)
+    finally:
+        # Remueve el enlace de descargas activas al terminar la tarea
+        active_downloads.remove(url)
+
+async def verify_and_download(url, user_id, chat_id):
+    # Ejemplo de verificación del enlace y descarga
+    m3u8_link = await extract_last_m3u8_link(driver, url)
+    if m3u8_link:
+        await download_with_yt_dlp(m3u8_link, user_id, "modelo_nombre", url, chat_id)
+    else:
+        await bot.send_message(chat_id, "❌ No se pudo obtener un enlace de transmisión válido.")
 
 async def handle_link(chat_id, user_id, link):
     # Configura e inicializa el driver
