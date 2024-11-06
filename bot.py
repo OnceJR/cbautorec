@@ -675,7 +675,7 @@ async def process_url(event):
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
 
-    # Si el usuario tiene un clip pendiente, ignora este enlace para la grabación general
+    # Verifica si el usuario tiene un clip pendiente y no guarda el enlace si es así
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
         logging.info(f"Ignorando el enlace porque es un clip pendiente para el usuario {event.sender_id}")
         return
