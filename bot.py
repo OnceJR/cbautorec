@@ -226,13 +226,22 @@ async def handle_file_upload(user_id, chat_id, file):
         if duration is None or width is None or height is None:
             await bot.send_message(user_id, f"❌ Error al obtener metadatos del archivo: {file}")
             return
-        
-        # Envío del video al chat de Telegram con soporte para streaming
+
+        # Generar una miniatura temporal única
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
+            thumbnail_path = temp_thumb.name
+        thumbnail_command = [
+            "ffmpeg", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", thumbnail_path
+        ]
+        subprocess.run(thumbnail_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        # Envío del video al chat de Telegram con soporte para streaming y miniatura
         if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
             await bot.send_file(
                 chat_id, 
                 file_path, 
                 caption=f"📹 Video: {file}",
+                thumb=thumbnail_path,
                 attributes=[DocumentAttributeVideo(
                     duration=duration,
                     w=width,
@@ -243,7 +252,8 @@ async def handle_file_upload(user_id, chat_id, file):
         else:
             await send_large_file(chat_id, file_path, bot)
         
-        # Eliminar archivo local tras envío exitoso
+        # Eliminar el archivo de miniatura y el archivo de video local tras envío exitoso
+        os.remove(thumbnail_path)
         os.remove(file_path)
         logging.info(f"Archivo eliminado: {file}")
 
