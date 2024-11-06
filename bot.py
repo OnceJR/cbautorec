@@ -589,37 +589,39 @@ async def clip(event):
     url = event.pattern_match.group(1)
     model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}.mp4"
+    filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}_clip.mp4"
     
-    await event.reply("Iniciando la grabación del clip...")
+    await event.reply("🎥 Iniciando la grabación del clip de 30 segundos...")
 
-    # Comando para grabar el stream
-    record_command = f"ffmpeg -i {url} -t 30 -c:v libx264 -crf 23 -preset veryfast -c:a aac -b:a 128k {filename}"
+    # Comando para grabar 30 segundos del stream usando ffmpeg
+    record_command = [
+        "ffmpeg", "-y", "-i", url, "-t", "30", 
+        "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
+        "-c:a", "aac", "-b:a", "128k", filename
+    ]
     
     try:
-        process = subprocess.Popen(record_command, shell=True)
-        process.wait()
+        # Ejecuta el comando de grabación de forma asincrónica
+        process = await asyncio.create_subprocess_exec(
+            *record_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
         if process.returncode != 0:
-            await event.reply("Error durante la grabación del clip.")
+            await event.reply("❌ Error durante la grabación del clip.")
             return
     except Exception as e:
-        await event.reply(f"Ocurrió un error: {str(e)}")
+        await event.reply(f"❌ Ocurrió un error: {str(e)}")
         return
 
-    await event.reply("Grabación completada. Subiendo a Google Drive...")
+    await event.reply("✅ Grabación completada. Enviando el clip...")
 
-    # Subida a Google Drive con rclone
-    rclone_command = f"rclone copy {filename} {GDRIVE_PATH}"
-    os.system(rclone_command)
+    # Envía el clip directamente a Telegram
+    await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
 
-    # Envío del enlace al chat
-    drive_link = f"{GDRIVE_PATH}{model_name}_{timestamp}.mp4"
-    await event.reply(f"Clip grabado y subido a Google Drive: [Enlace a tu video]({drive_link})")
-
-    # Envío del clip al usuario
-    await bot.send_file(event.chat_id, filename, caption="Aquí tienes tu clip grabado.")
-
-    # Eliminar el archivo local después de subir
+    # Elimina el archivo local después de enviar
     os.remove(filename)
 
 # Comando para resetear enlaces
@@ -638,6 +640,8 @@ async def ignore_invalid_commands(event):
     # No responder a mensajes que no coincidan con los comandos registrados
     pass
 
+active_downloads = set()  # Conjunto para rastrear descargas activas
+
 @bot.on(events.NewMessage)
 async def process_url(event):
     if event.text.startswith('/'):
@@ -649,15 +653,40 @@ async def process_url(event):
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
     
-    # Guardar el enlace si es válido
+    # Procesar el enlace si es válido y no está en proceso
     if event.text and is_valid_url(event.text):
-        add_link(str(event.sender_id), event.text)
-        await event.respond(f"🌐 URL guardada: {event.text}")
+        url = event.text
+        if url in active_downloads:
+            await event.respond("⚠️ Este enlace ya está en proceso de descarga.")
+            return
+
+        add_link(str(event.sender_id), url)
+        await event.respond(f"🌐 URL guardada: {url}")
         await event.respond(
-            "⚠️ <b>¡inicio de Monitoreo cada minuto...!</b>\n\n",
+            "⚠️ <b>¡Inicio de Monitoreo cada minuto...!</b>\n\n",
             parse_mode='html'
         )
-    # Si la URL no es válida, no hacemos nada y simplemente ignoramos el mensaje.
+
+        # Añadir el enlace a descargas activas y crear una nueva tarea
+        active_downloads.add(url)
+        asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
+
+async def handle_link(chat_id, user_id, link):
+    try:
+        # Lógica de verificación y descarga (llama a funciones que manejen la descarga y verificación)
+        await verify_and_download(link, user_id, chat_id)
+    finally:
+        # Remover el enlace de descargas activas cuando termine
+        active_downloads.remove(link)
+
+async def verify_and_download(link, user_id, chat_id):
+    # Implementa la lógica de verificación del enlace y descarga
+    m3u8_link = await extract_last_m3u8_link(driver, link)  # Verificación de enlace
+    if m3u8_link:
+        # Iniciar la descarga en una tarea independiente
+        await download_with_yt_dlp(m3u8_link, user_id, "modelo_nombre", link, chat_id)
+    else:
+        await bot.send_message(chat_id, "❌ No se pudo obtener un enlace de transmisión válido.")
 
 # Bienvenida
 @bot.on(events.NewMessage(pattern='/start'))
