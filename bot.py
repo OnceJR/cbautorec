@@ -584,45 +584,72 @@ async def check_recording_status(event):
     else:
         await event.respond("❗ No tienes un estado de grabación establecido.")
 
-@bot.on(events.NewMessage(pattern='^clip (.+)'))
-async def clip(event):
-    url = event.pattern_match.group(1)
-    model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
-    timestamp = time.strftime("%Y%m%d_%H%M%S")
-    filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}_clip.mp4"
-    
-    await event.reply("🎥 Iniciando la grabación del clip de 30 segundos...")
+# Variable temporal para almacenar el estado del enlace en espera de cada usuario
+pending_clips = {}
 
-    # Comando para grabar 30 segundos del stream usando ffmpeg
-    record_command = [
-        "ffmpeg", "-y", "-i", url, "-t", "30", 
-        "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
-        "-c:a", "aac", "-b:a", "128k", filename
-    ]
-    
-    try:
-        # Ejecuta el comando de grabación de forma asincrónica
-        process = await asyncio.create_subprocess_exec(
-            *record_command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode != 0:
-            await event.reply("❌ Error durante la grabación del clip.")
-            return
-    except Exception as e:
-        await event.reply(f"❌ Ocurrió un error: {str(e)}")
+@bot.on(events.NewMessage(pattern='/clip'))
+async def start_clip(event):
+    # Verifica si el usuario está autorizado
+    if event.sender_id not in AUTHORIZED_USERS:
+        await event.reply("❌ No tienes permiso para usar este comando.")
         return
 
-    await event.reply("✅ Grabación completada. Enviando el clip...")
+    # Solicita el enlace al usuario y guarda su estado como "pendiente"
+    await event.reply("📥 Por favor, envíame el enlace del stream para grabar un clip de 30 segundos.")
+    pending_clips[event.sender_id] = True
 
-    # Envía el clip directamente a Telegram
-    await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
+@bot.on(events.NewMessage)
+async def process_clip_link(event):
+    # Verifica si el usuario tiene un clip pendiente y si ha enviado un enlace válido
+    if event.sender_id in pending_clips and pending_clips[event.sender_id]:
+        url = event.text
 
-    # Elimina el archivo local después de enviar
-    os.remove(filename)
+        # Verifica si es un enlace válido (usando is_valid_url o similar)
+        if not is_valid_url(url):
+            await event.reply("❌ Por favor, envía un enlace válido.")
+            return
+        
+        # Configura los parámetros de grabación
+        model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}_clip.mp4"
+        
+        await event.reply("🎥 Iniciando la grabación del clip de 30 segundos...")
+
+        # Comando para grabar 30 segundos del stream usando ffmpeg
+        record_command = [
+            "ffmpeg", "-y", "-i", url, "-t", "30", 
+            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
+            "-c:a", "aac", "-b:a", "128k", filename
+        ]
+        
+        try:
+            # Ejecuta el comando de grabación de forma asincrónica
+            process = await asyncio.create_subprocess_exec(
+                *record_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+            
+            if process.returncode != 0:
+                await event.reply("❌ Error durante la grabación del clip.")
+                logging.error(stderr.decode())  # Registrar el error en los logs
+                return
+        except Exception as e:
+            await event.reply(f"❌ Ocurrió un error: {str(e)}")
+            logging.error(f"Error: {e}")
+            return
+
+        # Enviar el clip al usuario
+        await event.reply("✅ Grabación completada. Enviando el clip...")
+        await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
+        
+        # Elimina el archivo local después de enviar
+        os.remove(filename)
+
+        # Elimina el estado pendiente para este usuario
+        del pending_clips[event.sender_id]
 
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
