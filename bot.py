@@ -47,9 +47,9 @@ MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 
 AUTHORIZED_USERS = {1170684259, 1218594540}
 is_recording = {}  # Diccionario para almacenar el estado de grabación por usuario
-
-# Diccionario para almacenar información de grabación por modelo
-grabaciones = {}
+pending_clips = {}  # Variable temporal para almacenar el estado del enlace en espera de cada usuario
+grabaciones = {}  # Diccionario para almacenar información de grabación por modelo
+active_downloads = set()  # Descargas activas
 
 # Cargar y guardar enlaces
 def load_links():
@@ -584,9 +584,6 @@ async def check_recording_status(event):
     else:
         await event.respond("❗ No tienes un estado de grabación establecido.")
 
-# Variable temporal para almacenar el estado del enlace en espera de cada usuario
-pending_clips = {}
-
 @bot.on(events.NewMessage(pattern='^/clip$'))
 async def start_clip(event):
     # Verifica si el usuario está autorizado
@@ -650,7 +647,7 @@ async def process_clip_link(event):
 
         # Elimina el estado pendiente para este usuario
         del pending_clips[event.sender_id]
-
+        
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
 async def reset_links(event):
@@ -667,8 +664,6 @@ async def ignore_invalid_commands(event):
     # No responder a mensajes que no coincidan con los comandos registrados
     pass
 
-active_downloads = set()  # Conjunto para rastrear descargas activas
-
 @bot.on(events.NewMessage)
 async def process_url(event):
     if event.text.startswith('/'):
@@ -680,9 +675,8 @@ async def process_url(event):
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
 
-    # Verifica si el usuario está en el contexto de un clip
-    if event.sender_id in pending_clips:
-        # Ignorar el enlace porque es para el comando `/clip`
+    # Si el usuario tiene un clip pendiente, ignora este enlace para la grabación general
+    if event.sender_id in pending_clips and pending_clips[event.sender_id]:
         return
     
     # Procesar el enlace si es válido y no está en proceso
