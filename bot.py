@@ -604,19 +604,19 @@ async def process_clip_link(event):
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
         url = event.text
 
-        # Verifica si es un enlace válido (usando is_valid_url o similar)
+        # Verifica si es un enlace válido
         if not is_valid_url(url):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
         
-        # Configura los parámetros de grabación
-        model_name = url.split('/')[-1].split('.')[0]  # Extrae el nombre del modelo de la URL
+        # Configura los parámetros de grabación para el clip de 30 segundos
+        model_name = url.split('/')[-1].split('.')[0]
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}_clip.mp4"
         
         await event.reply("🎥 Iniciando la grabación del clip de 30 segundos...")
 
-        # Comando para grabar 30 segundos del stream usando ffmpeg
+        # Comando para grabar el clip
         record_command = [
             "ffmpeg", "-y", "-i", url, "-t", "30", 
             "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
@@ -634,7 +634,7 @@ async def process_clip_link(event):
             
             if process.returncode != 0:
                 await event.reply("❌ Error durante la grabación del clip.")
-                logging.error(stderr.decode())  # Registrar el error en los logs
+                logging.error(stderr.decode())  # Registrar el error
                 return
         except Exception as e:
             await event.reply(f"❌ Ocurrió un error: {str(e)}")
@@ -650,12 +650,6 @@ async def process_clip_link(event):
 
         # Elimina el estado pendiente para este usuario
         del pending_clips[event.sender_id]
-
-    # Guardar otros enlaces fuera del contexto de `/clip`
-    elif is_valid_url(event.text) and event.sender_id in AUTHORIZED_USERS:
-        add_link(str(event.sender_id), event.text)
-        await event.respond(f"🌐 URL guardada: {event.text}")
-        await event.respond("⚠️ ¡Inicio de Monitoreo cada minuto...!", parse_mode='html')
 
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
@@ -686,13 +680,14 @@ async def process_url(event):
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
 
-    # Procesar el enlace si es válido y no está en proceso o en el contexto de /clip
+    # Verifica si el usuario está en el contexto de un clip
+    if event.sender_id in pending_clips:
+        # Ignorar el enlace porque es para el comando `/clip`
+        return
+    
+    # Procesar el enlace si es válido y no está en proceso
     if event.text and is_valid_url(event.text):
         url = event.text
-        
-        # Ignora el enlace si el usuario está en `pending_clips`
-        if event.sender_id in pending_clips:
-            return
         
         # Verifica si el enlace ya está en proceso de descarga
         if url in active_downloads:
@@ -710,7 +705,7 @@ async def process_url(event):
         # Añadir el enlace a descargas activas y crear una nueva tarea
         active_downloads.add(url)
         asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
-
+        
 async def handle_link(chat_id, user_id, url):
     try:
         # Lógica de verificación y descarga del enlace
