@@ -587,7 +587,7 @@ async def check_recording_status(event):
 # Variable temporal para almacenar el estado del enlace en espera de cada usuario
 pending_clips = {}
 
-@bot.on(events.NewMessage(pattern='/clip'))
+@bot.on(events.NewMessage(pattern='^/clip$'))
 async def start_clip(event):
     # Verifica si el usuario está autorizado
     if event.sender_id not in AUTHORIZED_USERS:
