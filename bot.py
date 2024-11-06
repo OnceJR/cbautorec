@@ -677,6 +677,7 @@ async def process_url(event):
 
     # Si el usuario tiene un clip pendiente, ignora este enlace para la grabación general
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
+        logging.info(f"Ignorando el enlace porque es un clip pendiente para el usuario {event.sender_id}")
         return
     
     # Procesar el enlace si es válido y no está en proceso
