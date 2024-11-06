@@ -651,6 +651,12 @@ async def process_clip_link(event):
         # Elimina el estado pendiente para este usuario
         del pending_clips[event.sender_id]
 
+    # Guardar otros enlaces fuera del contexto de `/clip`
+    elif is_valid_url(event.text) and event.sender_id in AUTHORIZED_USERS:
+        add_link(str(event.sender_id), event.text)
+        await event.respond(f"🌐 URL guardada: {event.text}")
+        await event.respond("⚠️ ¡Inicio de Monitoreo cada minuto...!", parse_mode='html')
+
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
 async def reset_links(event):
@@ -699,18 +705,25 @@ async def process_url(event):
         asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
 
 async def handle_link(chat_id, user_id, link):
-    try:
-        # Lógica de verificación y descarga (llama a funciones que manejen la descarga y verificación)
-        await verify_and_download(link, user_id, chat_id)
-    finally:
-        # Remover el enlace de descargas activas cuando termine
-        active_downloads.remove(link)
+    # Configura e inicializa el driver
+    chrome_options = Options()
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-dev-shm-usage")
 
-async def verify_and_download(link, user_id, chat_id):
-    # Implementa la lógica de verificación del enlace y descarga
-    m3u8_link = await extract_last_m3u8_link(driver, link)  # Verificación de enlace
+    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+
+    try:
+        # Llama a la función de verificación y descarga
+        await verify_and_download(link, user_id, chat_id, driver)
+    finally:
+        # Cierra el driver para liberar recursos
+        driver.quit()
+
+async def verify_and_download(link, user_id, chat_id, driver):
+    # Verifica y descarga usando el driver
+    m3u8_link = await extract_last_m3u8_link(driver, link)
     if m3u8_link:
-        # Iniciar la descarga en una tarea independiente
         await download_with_yt_dlp(m3u8_link, user_id, "modelo_nombre", link, chat_id)
     else:
         await bot.send_message(chat_id, "❌ No se pudo obtener un enlace de transmisión válido.")
