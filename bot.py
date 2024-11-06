@@ -241,7 +241,7 @@ async def handle_file_upload(user_id, chat_id, file):
                 )]
             )
         else:
-            await send_large_file(chat_id, file_path)
+            await send_large_file(chat_id, file_path, bot)
         
         # Eliminar archivo local tras envío exitoso
         os.remove(file_path)
