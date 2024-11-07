@@ -106,35 +106,32 @@ def is_valid_url(url):
         return False
 
 # Extracción de enlace m3u8 con Selenium
-async def extract_last_m3u8_link(chaturbate_link):
-    chrome_options = Options()
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-software-rasterizer")
-    
-    # Inicializa el driver en cada extracción
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
-    
+async def extract_last_m3u8_link(link):
+    driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
     try:
+        # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        await asyncio.sleep(2)  # Esperar para asegurarse de que la página esté cargada
         
+        # Esperar a que el campo de entrada esté disponible y enviar el enlace
         input_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
-        input_field.send_keys(chaturbate_link)
+        input_field.send_keys(link)
 
+        # Esperar y hacer clic en el botón "Run"
         run_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]'))
         )
         run_button.click()
+        logging.info("Botón 'Run' clickeado, esperando a que se procesen los enlaces...")
 
+        # Esperar a que los enlaces m3u8 se generen y estén disponibles
         m3u8_links = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, '//pre/a'))
         )
-        
+
+        # Obtener el último enlace m3u8 si existe
         if m3u8_links:
             last_m3u8_link = m3u8_links[-1].get_attribute('href')
             logging.info(f"Enlace m3u8 extraído: {last_m3u8_link}")
@@ -146,7 +143,7 @@ async def extract_last_m3u8_link(chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
     finally:
-        driver.quit()  # Asegurarse de cerrar el driver después de cada uso
+        driver.quit()  # Asegura que el driver se cierre al finalizar
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
@@ -430,34 +427,34 @@ async def callback_alert(event):
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
     while True:
+        driver = setup_driver()  # Inicializar un nuevo driver en cada ciclo
         links = load_links()
         if not links:
             logging.warning("No se cargaron enlaces guardados.")
             await asyncio.sleep(60)
             continue
 
-        tasks = []  # Lista de tareas para procesar los enlaces en paralelo
+        tasks = []
         processed_links = {}
 
         for user_id_str, user_links in links.items():
-            if not user_id_str or user_id_str == 'None':
-                logging.error(f"user_id_str inválido: '{user_id_str}'. Verifica el origen de los enlaces guardados.")
-                continue
-
             try:
                 user_id = int(user_id_str)
             except ValueError as e:
-                logging.error(f"Error de conversión a int para user_id_str '{user_id_str}': {e}")
+                logging.error(f"Error de conversión para user_id_str '{user_id_str}': {e}")
                 continue
 
             for link in user_links:
                 if link not in processed_links:
-                    task = asyncio.create_task(process_link(user_id, link))
+                    task = asyncio.create_task(process_link(driver, user_id, link))
                     tasks.append(task)
                     processed_links[link] = task
 
-        if tasks:
-            await asyncio.gather(*tasks)
+        try:
+            if tasks:
+                await asyncio.gather(*tasks)
+        finally:
+            driver.quit()  # Cierra el driver al finalizar cada ciclo
 
         logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)
