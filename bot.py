@@ -106,7 +106,7 @@ def is_valid_url(url):
         return False
 
 # Extracción de enlace m3u8 con Selenium
-async def extract_last_m3u8_link(link):
+async def extract_last_m3u8_link(driver, chaturbate_link):
     driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
     try:
         # Navegar a la página de extracción de m3u8
