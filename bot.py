@@ -426,8 +426,9 @@ async def callback_alert(event):
     
 # Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
 async def verificar_enlaces():
+    driver = setup_driver()  # Inicializa el driver solo una vez al inicio
+
     while True:
-        driver = setup_driver()  # Inicializar un nuevo driver en cada ciclo
         links = load_links()
         if not links:
             logging.warning("No se cargaron enlaces guardados.")
@@ -446,6 +447,7 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
+                    # Pasamos el mismo driver a cada tarea sin reiniciarlo
                     task = asyncio.create_task(process_link(driver, user_id, link))
                     tasks.append(task)
                     processed_links[link] = task
@@ -453,10 +455,13 @@ async def verificar_enlaces():
         try:
             if tasks:
                 await asyncio.gather(*tasks)
-        finally:
-            driver.quit()  # Cierra el driver al finalizar cada ciclo
+        except Exception as e:
+            logging.error(f"Error en el ciclo de verificación: {e}")
+            driver.quit()  # Cierra el driver si ocurre un error crítico
+            driver = setup_driver()  # Reinstancia el driver en caso de error
+        else:
+            logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
 
-        logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
         await asyncio.sleep(60)
 
 async def process_link(user_id, link):
