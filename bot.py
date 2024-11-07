@@ -762,17 +762,19 @@ async def verify_and_download(link, user_id, chat_id, driver):
 # Bienvenida
 @bot.on(events.NewMessage(pattern='/start'))
 async def send_welcome(event):
-    await event.respond(
-        "👋 <b>¡Bot de Grabación Automatica!</b>\n\n"
-        "Puedes iniciar una grabación enviando una URL válida.\n"
-        "Comandos:\n"
-        "• <b>/grabar</b> - Inicia monitoreo y grabación automática de una transmisión.\n"
-        "• <b>/mis_enlaces</b> - Muestra tus enlaces guardados.\n"
-        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado.\n"
-        "• <b>/status</b> - Muestra el estado del bot.\n"
-        "• <b>/check_modelo</b> - Verifica el estado de la modelo (online u offline)\n",
-        parse_mode='html'
+    mensaje = (
+        "👋 <b>¡Bienvenido al Bot de Grabación Automática!</b>\n\n"
+        "Este bot puede ayudarte a grabar y gestionar transmisiones en directo de forma automática.\n\n"
+        "<b>Comandos disponibles:</b>\n\n"
+        "• <b>/grabar</b> - Inicia el monitoreo y grabación automática de una transmisión en vivo.\n"
+        "• <b>/check_modelo</b> - Muestra una lista de modelos actualmente en grabación. Selecciona un modelo para ver detalles.\n"
+        "• <b>/mis_enlaces</b> - Muestra los enlaces de transmisiones guardados por el usuario.\n"
+        "• <b>/eliminar_enlace</b> - Elimina un enlace guardado (usa: <code>/eliminar_enlace [enlace]</code>).\n"
+        "• <b>/status</b> - Verifica el estado general del bot.\n\n"
+        "Para comenzar, puedes enviar el comando <code>/grabar</code> seguido de la URL de la transmisión. ¡Disfruta!\n"
     )
+    
+    await event.respond(mensaje, parse_mode='html')
 
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
