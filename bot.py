@@ -474,13 +474,14 @@ async def verificar_enlaces():
 async def process_link(driver, user_id, link):
     m3u8_link = await extract_last_m3u8_link(driver, link)
     if m3u8_link:
+        # Extrae el nombre del modelo del enlace, eliminando barras y otros caracteres no deseados
         modelo = link.rstrip('/').split('/')[-1]
 
-        # Verificar si ya hay una grabación activa
+        # Verifica si ya hay una grabación activa
         if modelo in grabaciones and grabaciones[modelo].get('grabando'):
             await alerta_emergente(modelo, 'online', user_id)
         else:
-            # Iniciar una nueva grabación en paralelo
+            # Iniciar una nueva grabación en paralelo con el nombre de modelo correcto
             await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
     else:
         modelo = link.rstrip('/').split('/')[-1]
