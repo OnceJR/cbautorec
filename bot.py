@@ -676,8 +676,11 @@ async def process_clip_link(event):
 async def reset_links(event):
     user_id = str(event.sender_id)
     if user_id == "1170684259":  # Solo el admin puede usar este comando
-        os.remove(LINKS_FILE)
-        await event.respond("✅ Enlaces reseteados exitosamente.")
+        if os.path.exists(LINKS_FILE):
+            os.remove(LINKS_FILE)
+            await event.respond("✅ Enlaces reseteados exitosamente.")
+        else:
+            await event.respond("⚠️ No se encontró el archivo de enlaces para resetear.")
     else:
         await event.respond("❗ No tienes permiso para usar este comando.")
 
