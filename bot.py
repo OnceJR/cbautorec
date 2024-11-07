@@ -117,7 +117,7 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
-        input_field.send_keys(link)
+        input_field.send_keys(chaturbate_link)  # Usar chaturbate_link en lugar de link
 
         # Esperar y hacer clic en el botón "Run"
         run_button = WebDriverWait(driver, 10).until(
