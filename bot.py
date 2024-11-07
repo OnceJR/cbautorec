@@ -463,7 +463,7 @@ async def verificar_enlaces():
 
         await asyncio.sleep(60)
 
-async def process_link(user_id, link):
+async def process_link(driver, user_id, link):
     m3u8_link = await extract_last_m3u8_link(link)
     if m3u8_link:
         modelo = link.rstrip('/').split('/')[-1]
