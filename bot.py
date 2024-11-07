@@ -464,7 +464,7 @@ async def verificar_enlaces():
         await asyncio.sleep(60)
 
 async def process_link(driver, user_id, link):
-    m3u8_link = await extract_last_m3u8_link(link)
+    m3u8_link = await extract_last_m3u8_link(driver, link)
     if m3u8_link:
         modelo = link.rstrip('/').split('/')[-1]
 
@@ -715,9 +715,8 @@ async def handle_link(chat_id, user_id, url):
         # Remueve el enlace de descargas activas al terminar la tarea
         active_downloads.remove(url)
 
-async def verify_and_download(url, user_id, chat_id):
-    # Ejemplo de verificación del enlace y descarga
-    m3u8_link = await extract_last_m3u8_link(driver, url)
+async def verify_and_download(link, user_id, chat_id, driver):
+    m3u8_link = await extract_last_m3u8_link(driver, link)
     if m3u8_link:
         await download_with_yt_dlp(m3u8_link, user_id, "modelo_nombre", url, chat_id)
     else:
