@@ -231,17 +231,18 @@ async def handle_file_upload(user_id, chat_id, file):
             await bot.send_message(user_id, f"❌ Error al obtener metadatos del archivo: {file}")
             return
 
-        # Generar una miniatura temporal única
+        # Generar una miniatura temporal de forma rápida
         with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
             thumbnail_path = temp_thumb.name
 
         thumbnail_command = [
-            "ffmpeg", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", thumbnail_path
+            "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-q:v", "2", thumbnail_path
         ]
 
-        # Ejecutar el comando con un límite de tiempo
+        # Ejecutar el comando con manejo de errores
         try:
             subprocess.run(thumbnail_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            logging.info("Miniatura generada exitosamente")
         except subprocess.TimeoutExpired:
             logging.error("Timeout: Creación de miniatura tardó demasiado tiempo.")
             await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura debido a un tiempo de espera excedido.")
