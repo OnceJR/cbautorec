@@ -447,7 +447,6 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
-                    # Pasamos el mismo driver a cada tarea sin reiniciarlo
                     task = asyncio.create_task(process_link(driver, user_id, link))
                     tasks.append(task)
                     processed_links[link] = task
