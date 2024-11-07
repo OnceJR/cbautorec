@@ -396,29 +396,37 @@ async def obtener_informacion_modelo(modelo, user_id):
     
     return mensaje, True
 
-# Función para enviar el mensaje con el botón inline
+# Función para enviar el mensaje con la lista de botones para cada modelo en grabación
 @bot.on(events.NewMessage(pattern='/check_modelo'))
 async def check_modelo(event):
-    if len(event.raw_text.split()) < 2:
-        await event.respond("Por favor, proporciona el nombre de la modelo después del comando.")
+    # Verificar si hay grabaciones activas
+    if not grabaciones:
+        await event.respond("📡 Actualmente no hay modelos en grabación.")
         return
 
-    nombre_modelo = event.raw_text.split()[1]
-    
-    # Crear el botón inline para mostrar el estado de la modelo
+    # Crear una lista de botones para cada modelo en grabación, con un estilo uniforme
     buttons = [
-        [Button.inline(f"Estado de {nombre_modelo}", data=f"alerta_modelo:{nombre_modelo}")]
+        [Button.inline(f"📍 {modelo}", data=f"alerta_modelo:{modelo}")]
+        for modelo in grabaciones.keys()
     ]
-    await event.respond("Haz clic en el botón para ver el estado de la modelo:", buttons=buttons)
+    
+    # Mensaje de bienvenida y guía
+    mensaje = (
+        "📋 <b>Modelos en Grabación</b>\n\n"
+        "Selecciona un modelo de la lista para ver su estado actual.\n"
+        "Cada modelo muestra su progreso de grabación y el tamaño del archivo actual.\n"
+    )
+    
+    # Enviar el mensaje con los botones
+    await event.respond(mensaje, buttons=buttons, parse_mode='html')
 
-# Función que recibe el callback del botón y simula una alerta
+# Función que recibe el callback del botón y muestra una alerta con el estado del modelo
 @bot.on(events.CallbackQuery(data=lambda data: data.startswith(b"alerta_modelo")))
 async def callback_alert(event):
-    # Extrae el nombre de la modelo desde el callback data
-    modelo_url = event.data.decode().split(':')[1]
-    modelo = modelo_url.split('/')[-1]  # Extrae el nombre de la modelo al final del enlace
+    # Extrae el nombre del modelo desde el callback data
+    modelo = event.data.decode().split(':')[1]
 
-    # Obtener el estado actual de la modelo
+    # Obtener el estado actual del modelo
     mensaje_alerta, online = await obtener_informacion_modelo(modelo, event.sender_id)
 
     # Enviar el mensaje como una alerta emergente
