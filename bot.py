@@ -310,36 +310,44 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     # Formatear la fecha y hora actual
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
+
+    # Si ya existe una grabación activa para el mismo enlace
+    if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
+        logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
+        # Agregar el chat_id para compartir el progreso
+        grabaciones[modelo]['chats'].add(chat_id)
+        return
+
+    # Comando para iniciar descarga
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
-        # Enviar el mensaje al chat original (grupo o privado)
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
 
-        # Agregar a grabaciones
+        # Registrar la grabación activa con información de usuarios
         grabaciones[modelo] = {
             'inicio': time.time(),
             'file_path': output_file_path,
-            'user_id': user_id,
+            'm3u8_url': m3u8_url,
+            'chats': {chat_id}  # Conjunto de chats asociados a esta grabación
         }
 
         # Ejecutar la descarga en segundo plano
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL  # Ignorar los mensajes de error y advertencia
+            stderr=asyncio.subprocess.DEVNULL
         )
-        
+
         # Leer la salida de stdout para monitorear el progreso de la descarga
         async def read_output(stream):
             while True:
                 line = await stream.readline()
                 if not line:
                     break
-                # Extraer y mostrar el tamaño de la descarga si está disponible en la salida
                 decoded_line = line.decode().strip()
-                if "M" in decoded_line:  # Puedes ajustar esto según el formato de salida
+                if "M" in decoded_line:  
                     logging.info(f"Progreso de descarga: {decoded_line}")
 
         # Leer stdout en tiempo real para mostrar el tamaño
@@ -349,19 +357,24 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
         await process.wait()
 
         if process.returncode == 0:
-            # Obtener el tamaño del archivo descargado
-            file_size = os.path.getsize(output_file_path) / (1024 ** 2)  # Tamaño en MB
+            file_size = os.path.getsize(output_file_path) / (1024 ** 2)
             logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
-            await bot.send_message(chat_id, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
+            # Enviar el mensaje de finalización a todos los chats asociados
+            for chat in grabaciones[modelo]['chats']:
+                await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
             await upload_and_delete_mp4_files(user_id, chat_id)
+
         else:
-            await bot.send_message(chat_id, f"❌ Error al descargar para {modelo}: Código de error {process.returncode}")
+            for chat in grabaciones[modelo]['chats']:
+                await bot.send_message(chat, f"❌ Error al descargar para {modelo}")
 
     except Exception as e:
+        for chat in grabaciones[modelo]['chats']:
+            await bot.send_message(chat, f"❌ Error durante la descarga para {modelo}: {e}")
         logging.error(f"Error durante la descarga para {modelo}: {e}")
-        await bot.send_message(chat_id, f"❌ Error durante la descarga para {modelo}: {e}")
+
     finally:
-        # Elimina la grabación del diccionario, independientemente del resultado
+        # Elimina la grabación del diccionario
         grabaciones.pop(modelo, None)
 
 # Función para obtener la información de la modelo
