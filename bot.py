@@ -29,15 +29,15 @@ bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def setup_driver():
-    # Inicializa el navegador
     chrome_options = Options()
-    chrome_options.add_argument("--no-sandbox")  # Evita el sandbox cuando se ejecuta como root
-    chrome_options.add_argument("--headless")  # Ejecuta sin interfaz gráfica
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Usa /tmp en lugar de /dev/shm para memoria compartida
-    chrome_options.add_argument("--remote-debugging-port=9222")  # Habilita un puerto para depuración remota
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--remote-debugging-port=9222")
     chrome_options.add_argument("--disable-software-rasterizer")
+    chrome_options.add_argument("--disable-gpu")  # Puede mejorar la estabilidad en headless
+    chrome_options.add_argument("--window-size=1920,1080")  # Evita problemas de tamaño en headless
 
-    # Crea el driver de Chrome
     driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
     return driver
 
