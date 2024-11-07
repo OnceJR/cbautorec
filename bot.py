@@ -35,6 +35,7 @@ def setup_driver():
     chrome_options.add_argument("--headless")  # Ejecuta sin interfaz gráfica
     chrome_options.add_argument("--disable-dev-shm-usage")  # Usa /tmp en lugar de /dev/shm para memoria compartida
     chrome_options.add_argument("--remote-debugging-port=9222")  # Habilita un puerto para depuración remota
+    chrome_options.add_argument("--disable-software-rasterizer")
 
     # Crea el driver de Chrome
     driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
@@ -105,31 +106,35 @@ def is_valid_url(url):
         return False
 
 # Extracción de enlace m3u8 con Selenium
-async def extract_last_m3u8_link(driver, chaturbate_link):
+async def extract_last_m3u8_link(chaturbate_link):
+    chrome_options = Options()
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-software-rasterizer")
+    
+    # Inicializa el driver en cada extracción
+    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+    
     try:
-        # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
+        await asyncio.sleep(2)  # Esperar para asegurarse de que la página esté cargada
         
-        # Esperar a que el campo de entrada esté disponible y enviar el enlace
         input_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
         input_field.send_keys(chaturbate_link)
 
-        # Esperar y hacer clic en el botón "Run"
         run_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]'))
         )
         run_button.click()
-        logging.info("Botón 'Run' clickeado, esperando a que se procesen los enlaces...")
 
-        # Esperar a que los enlaces m3u8 se generen y estén disponibles
         m3u8_links = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, '//pre/a'))
         )
-
-        # Obtener el último enlace m3u8 si existe
+        
         if m3u8_links:
             last_m3u8_link = m3u8_links[-1].get_attribute('href')
             logging.info(f"Enlace m3u8 extraído: {last_m3u8_link}")
@@ -140,6 +145,8 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
         return None
+    finally:
+        driver.quit()  # Asegurarse de cerrar el driver después de cada uso
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
