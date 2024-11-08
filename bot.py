@@ -45,6 +45,7 @@ LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
+LOG_CHANNEL = "2281927010"
 
 AUTHORIZED_USERS = {1170684259, 1218594540}
 is_recording = {}  # Diccionario para almacenar el estado de grabación por usuario
@@ -189,6 +190,16 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
         logging.error(f"Error en la función upload_and_delete_mp4_files: {e}")
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación: {e}")
 
+# Función para enviar mensaje al canal cuando se inicia la grabación
+async def notify_recording_start(modelo, link, user_id):
+    message = (
+        f"📡 <b>Inicio de Grabación</b>\n\n"
+        f"🔗 <b>Modelo:</b> {modelo}\n"
+        f"🌐 <b>Link:</b> {link}\n"
+        f"👤 <b>ID Usuario:</b> {user_id}"
+    )
+    await bot.send_message(LOG_CHANNEL, message, parse_mode="html")
+
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
     command = ["rclone", "copy", file_path, GDRIVE_PATH]
@@ -217,6 +228,14 @@ async def handle_file_upload(user_id, chat_id, file):
             if share_process.returncode == 0:
                 shared_link = share_stdout.strip().decode('utf-8')
                 await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+
+                # Enviar notificación al canal de logs
+                await bot.send_message(
+                    LOG_CHANNEL,
+                    f"✅ <b>Video Subido</b>\n\n📹 <b>Archivo:</b> {file}\n"
+                    f"🔗 <b>Enlace:</b> {shared_link}",
+                    parse_mode="html"
+                )
             else:
                 logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
                 await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")
@@ -236,16 +255,21 @@ async def handle_file_upload(user_id, chat_id, file):
             thumbnail_path = temp_thumb.name
 
         thumbnail_command = [
-            "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-q:v", "2", thumbnail_path
+            "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-qscale:v", "2", thumbnail_path
         ]
 
-        # Ejecutar el comando con manejo de errores
+        # Ejecutar el comando de miniatura de forma asíncrona para evitar bloqueos
         try:
-            subprocess.run(thumbnail_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10)
+            thumbnail_process = await asyncio.create_subprocess_exec(
+                *thumbnail_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await thumbnail_process.communicate()
             logging.info("Miniatura generada exitosamente")
-        except subprocess.TimeoutExpired:
-            logging.error("Timeout: Creación de miniatura tardó demasiado tiempo.")
-            await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura debido a un tiempo de espera excedido.")
+        except Exception as e:
+            logging.error("Error al generar la miniatura: %s", e)
+            await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura.")
             return
 
         # Envío del video al chat de Telegram con soporte para streaming y miniatura
@@ -324,12 +348,16 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
+        
+        # Mensaje de inicio de grabación y enlace para clips
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
+        await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
         # Registrar la grabación activa con información de usuarios
         grabaciones[modelo] = {
             'inicio': time.time(),
             'file_path': output_file_path,
+            'user_id': user_id,
             'm3u8_url': m3u8_url,
             'chats': {chat_id}  # Conjunto de chats asociados a esta grabación
         }
@@ -421,15 +449,22 @@ async def obtener_informacion_modelo(modelo, user_id):
 # Función para enviar el mensaje con la lista de botones para cada modelo en grabación
 @bot.on(events.NewMessage(pattern='/check_modelo'))
 async def check_modelo(event):
-    # Verificar si hay grabaciones activas
-    if not grabaciones:
-        await event.respond("📡 Actualmente no hay modelos en grabación.")
+    user_id = event.sender_id
+
+    # Filtrar modelos en grabación específicos para el usuario
+    modelos_usuario = [
+        modelo for modelo, info in grabaciones.items() if info['user_id'] == user_id
+    ]
+
+    # Verificar si el usuario tiene grabaciones activas
+    if not modelos_usuario:
+        await event.respond("📡 Actualmente no tienes modelos en grabación.")
         return
 
-    # Crear una lista de botones para cada modelo en grabación, con un estilo uniforme
+    # Crear una lista de botones para cada modelo que el usuario está grabando
     buttons = [
         [Button.inline(f"📍 {modelo}", data=f"alerta_modelo:{modelo}")]
-        for modelo in grabaciones.keys()
+        for modelo in modelos_usuario
     ]
     
     # Mensaje de bienvenida y guía
@@ -441,7 +476,7 @@ async def check_modelo(event):
     
     # Enviar el mensaje con los botones
     await event.respond(mensaje, buttons=buttons, parse_mode='html')
-
+    
 # Función que recibe el callback del botón y muestra una alerta con el estado del modelo
 @bot.on(events.CallbackQuery(data=lambda data: data.startswith(b"alerta_modelo")))
 async def callback_alert(event):
@@ -621,69 +656,96 @@ async def check_recording_status(event):
     else:
         await event.respond("❗ No tienes un estado de grabación establecido.")
 
-@bot.on(events.NewMessage(pattern='^/clip$'))
+@bot.on(events.NewMessage(pattern='/clip'))
 async def start_clip(event):
-    # Verifica si el usuario está autorizado
     if event.sender_id not in AUTHORIZED_USERS:
         await event.reply("❌ No tienes permiso para usar este comando.")
         return
 
-    # Solicita el enlace al usuario y guarda su estado como "pendiente"
-    await event.reply("📥 Por favor, envíame el enlace del stream para grabar un clip de 30 segundos.")
+    await event.reply(
+        "⚠️ Función de grabación de clips en <b>fase Beta</b>. Esta funcionalidad puede presentar errores.\n"
+        "⏳ Iniciando grabación de un clip de 30 segundos... ¡Espera el conteo en segundos! 🎥",
+        parse_mode='html'
+    )
+
     pending_clips[event.sender_id] = True
 
 @bot.on(events.NewMessage)
 async def process_clip_link(event):
-    # Verifica si el usuario tiene un clip pendiente y si ha enviado un enlace válido
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
         url = event.text
 
-        # Verifica si es un enlace válido
         if not is_valid_url(url):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
         
-        # Configura los parámetros de grabación para el clip de 30 segundos
-        model_name = url.split('/')[-1].split('.')[0]
+        modelo = url.split('/')[-1].split('.')[0]
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"{DOWNLOAD_PATH}{model_name}_{timestamp}_clip.mp4"
+        filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
         
-        await event.reply("🎥 Iniciando la grabación del clip de 30 segundos...")
+        await event.reply("⏳ Grabando clip de 30 segundos...")
 
-        # Comando para grabar el clip
+        # Comando para grabar el clip de 30 segundos
         record_command = [
             "ffmpeg", "-y", "-i", url, "-t", "30", 
             "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
             "-c:a", "aac", "-b:a", "128k", filename
         ]
-        
-        try:
-            # Ejecuta el comando de grabación de forma asincrónica
-            process = await asyncio.create_subprocess_exec(
-                *record_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
-            
-            if process.returncode != 0:
-                await event.reply("❌ Error durante la grabación del clip.")
-                logging.error(stderr.decode())  # Registrar el error
-                return
-        except Exception as e:
-            await event.reply(f"❌ Ocurrió un error: {str(e)}")
-            logging.error(f"Error: {e}")
-            return
 
-        # Enviar el clip al usuario
+        # Ejecutar la grabación y mostrar el conteo en tiempo real
+        process = await asyncio.create_subprocess_exec(*record_command)
+        
+        # Enviar el conteo en tiempo real con eliminación automática
+        for i in range(1, 31):
+            emoji = "🔥 HOT" if i % 5 == 0 else ""
+            progress_message = await event.respond(f"⏳ Grabando... {i} segundos {emoji}")
+            
+            # Esperar 1 segundo para el siguiente conteo
+            await asyncio.sleep(1)
+            
+            # Eliminar el mensaje de progreso después de un segundo
+            await progress_message.delete()
+
+        # Esperar a que el proceso de grabación termine
+        await process.wait()
+
+        if process.returncode != 0:
+            await event.reply("❌ Error durante la grabación del clip.")
+            return
+        
         await event.reply("✅ Grabación completada. Enviando el clip...")
         await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
         
-        # Elimina el archivo local después de enviar
+        # Eliminar archivo local después de enviar
         os.remove(filename)
-
-        # Elimina el estado pendiente para este usuario
         del pending_clips[event.sender_id]
+
+
+# Comando para el administrador: Eliminar archivos y reiniciar el driver
+@bot.on(events.NewMessage(pattern='/admin_reset'))
+async def admin_reset(event):
+    # Verifica si el comando fue enviado por el administrador
+    if event.sender_id != ADMIN_ID:
+        await event.respond("❌ No tienes permiso para ejecutar este comando.")
+        return
+
+    # Elimina todos los archivos en el directorio de descargas
+    try:
+        for file in os.listdir(DOWNLOAD_PATH):
+            file_path = os.path.join(DOWNLOAD_PATH, file)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        await event.respond("✅ Todos los archivos en el servidor han sido eliminados.")
+    except Exception as e:
+        await event.respond(f"❌ Error eliminando archivos: {e}")
+        return
+
+    # Reiniciar el driver
+    try:
+        driver = setup_driver()  # Crear una nueva instancia del driver
+        await event.respond("✅ Driver reiniciado exitosamente.")
+    except Exception as e:
+        await event.respond(f"❌ Error reiniciando el driver: {e}")
         
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
