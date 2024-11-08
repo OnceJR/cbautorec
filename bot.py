@@ -47,6 +47,7 @@ GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "2281927010"
 
+ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
 is_recording = {}  # Diccionario para almacenar el estado de grabación por usuario
 pending_clips = {}  # Variable temporal para almacenar el estado del enlace en espera de cada usuario
@@ -720,7 +721,6 @@ async def process_clip_link(event):
         os.remove(filename)
         del pending_clips[event.sender_id]
 
-
 # Comando para el administrador: Eliminar archivos y reiniciar el driver
 @bot.on(events.NewMessage(pattern='/admin_reset'))
 async def admin_reset(event):
@@ -750,15 +750,15 @@ async def admin_reset(event):
 # Comando para resetear enlaces
 @bot.on(events.NewMessage(pattern='/reset_links'))
 async def reset_links(event):
-    user_id = str(event.sender_id)
-    if user_id == "1170684259":  # Solo el admin puede usar este comando
-        if os.path.exists(LINKS_FILE):
-            os.remove(LINKS_FILE)
-            await event.respond("✅ Enlaces reseteados exitosamente.")
-        else:
-            await event.respond("⚠️ No se encontró el archivo de enlaces para resetear.")
-    else:
+    if event.sender_id != ADMIN_ID:  # Solo el admin puede usar este comando
         await event.respond("❗ No tienes permiso para usar este comando.")
+        return
+
+    if os.path.exists(LINKS_FILE):
+        os.remove(LINKS_FILE)
+        await event.respond("✅ Enlaces reseteados exitosamente.")
+    else:
+        await event.respond("⚠️ No se encontró el archivo de enlaces para resetear.")
 
 # Ignorar mensajes no válidos
 @bot.on(events.NewMessage)
@@ -807,21 +807,6 @@ async def process_url(event):
         # Añadir el enlace a descargas activas y crear una nueva tarea
         active_downloads.add(url)
         asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
-        
-async def handle_link(chat_id, user_id, url):
-    try:
-        # Lógica de verificación y descarga del enlace
-        await verify_and_download(url, user_id, chat_id)
-    finally:
-        # Remueve el enlace de descargas activas al terminar la tarea
-        active_downloads.remove(url)
-
-async def verify_and_download(link, user_id, chat_id, driver):
-    m3u8_link = await extract_last_m3u8_link(driver, link)
-    if m3u8_link:
-        await download_with_yt_dlp(m3u8_link, user_id, "modelo_nombre", url, chat_id)
-    else:
-        await bot.send_message(chat_id, "❌ No se pudo obtener un enlace de transmisión válido.")
 
 async def handle_link(chat_id, user_id, link):
     # Configura e inicializa el driver
