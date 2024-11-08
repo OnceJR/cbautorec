@@ -45,7 +45,7 @@ LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
-LOG_CHANNEL = "2281927010"
+LOG_CHANNEL = "@logscbdl"
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -612,6 +612,12 @@ async def save_link(event):
 
     # Ignorar comandos que comienzan con '/' pero no son el comando actual
     if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
+        return
+    
+    # Ignorar enlaces que terminan en .m3u8
+    if event.text.endswith('.m3u8'):
+        logging.info("Enlace .m3u8 detectado y omitido.")
+        await event.respond("⚠️ Enlace de tipo `.m3u8` detectado y omitido para grabación general.")
         return
     
     # Guardar el enlace si es válido
