@@ -702,7 +702,7 @@ async def start_clip(event):
 
     await event.reply(
         "⚠️ Función de grabación de clips en <b>fase Beta</b>. Esta funcionalidad puede presentar errores.\n"
-        "⏳ Iniciando grabación de un clip de 30 segundos... ¡Espera el conteo en segundos! 🎥",
+        "Por favor, envía el enlace del stream para grabar un clip de 30 segundos.",
         parse_mode='html'
     )
 
@@ -711,52 +711,47 @@ async def start_clip(event):
 @bot.on(events.NewMessage)
 async def process_clip_link(event):
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
-        url = event.text
+        url = event.text.strip()
 
         if not is_valid_url(url):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
-        
+
         modelo = url.split('/')[-1].split('.')[0]
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
-        
-        await event.reply("⏳ Grabando clip de 30 segundos...")
 
-        # Comando para grabar el clip de 30 segundos
+        progress_message = await event.reply("⏳ Grabando clip de 30 segundos...")
+
+        # Comando para grabar el clip de 30 segundos usando FFmpeg
         record_command = [
             "ffmpeg", "-y", "-i", url, "-t", "30", 
             "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
             "-c:a", "aac", "-b:a", "128k", filename
         ]
 
-        # Ejecutar la grabación y mostrar el conteo en tiempo real
+        # Ejecutar la grabación
         process = await asyncio.create_subprocess_exec(*record_command)
-        
-        # Enviar el conteo en tiempo real con eliminación automática
+
+        # Actualizar mensaje con el progreso en tiempo real
         for i in range(1, 31):
             emoji = "🔥 HOT" if i % 5 == 0 else ""
-            progress_message = await event.respond(f"⏳ Grabando... {i} segundos {emoji}")
-            
-            # Esperar 1 segundo para el siguiente conteo
+            await progress_message.edit(f"⏳ Grabando... {i} segundos {emoji}")
             await asyncio.sleep(1)
-            
-            # Eliminar el mensaje de progreso después de un segundo
-            await progress_message.delete()
 
         # Esperar a que el proceso de grabación termine
         await process.wait()
 
         if process.returncode != 0:
-            await event.reply("❌ Error durante la grabación del clip.")
+            await progress_message.edit("❌ Error durante la grabación del clip.")
             return
-        
-        await event.reply("✅ Grabación completada. Enviando el clip...")
+
+        await progress_message.edit("✅ Grabación completada. Enviando el clip...")
         await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
-        
+
         # Eliminar archivo local después de enviar
         os.remove(filename)
-        del pending_clips[event.sender_id]
+        del pending_clips[event.sender_id]  # Limpiar el estado del usuario
 
 # Comando para el administrador: Eliminar archivos y reiniciar el driver
 @bot.on(events.NewMessage(pattern='/admin_reset'))
