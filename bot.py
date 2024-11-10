@@ -187,7 +187,13 @@ async def get_video_metadata(file_path):
     else:
         logging.error(f"Error obteniendo metadata de video: {stderr.decode()}")
         return None, None, None
-
+        
+# Subprocesos asincrónicos para FFmpeg y ffprobe
+async def run_ffmpeg_command(command):
+    process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await process.communicate()
+    return stdout, stderr, process.returncode
+    
 async def upload_and_delete_mp4_files(user_id, chat_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
