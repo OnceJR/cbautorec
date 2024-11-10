@@ -191,15 +191,19 @@ async def get_video_metadata(file_path):
 async def upload_and_delete_mp4_files(user_id, chat_id):
     try:
         files = [f for f in os.listdir(DOWNLOAD_PATH) if f.endswith('.mp4')]
-        tasks = []  # Lista de tareas para procesar los archivos en paralelo
+        tasks = []
 
         for file in files:
-            # Ejecutar cada subida en una tarea separada para no bloquear el bot
-            task = asyncio.create_task(upload_and_notify(user_id, chat_id, file))
-            tasks.append(task)
+            file_path = os.path.join(DOWNLOAD_PATH, file)
+            # Verificar que el archivo existe antes de intentar la carga
+            if os.path.exists(file_path):
+                task = asyncio.create_task(upload_and_notify(user_id, chat_id, file))
+                tasks.append(task)
 
-            # Eliminar el archivo local después de subirlo
-            task.add_done_callback(lambda t, file=file: os.remove(os.path.join(DOWNLOAD_PATH, file)))
+                # Configurar la eliminación del archivo después de subirlo
+                task.add_done_callback(lambda t, path=file_path: os.remove(path) if os.path.exists(path) else None)
+            else:
+                logging.warning(f"El archivo {file} no existe y no se puede cargar.")
 
         # Ejecutar todas las tareas en paralelo y esperar a que terminen
         await asyncio.gather(*tasks)
@@ -232,20 +236,20 @@ async def upload_and_notify(user_id, chat_id, file_path):
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
     command = ["rclone", "copy", file_path, GDRIVE_PATH]
-    
+
     try:
         if not os.path.exists(file_path):
             await bot.send_message(user_id, f"❌ El archivo {file} no existe o fue movido.")
             return
 
-        # Ejecutar el proceso de subida a Google Drive
+        # Subida a Google Drive
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
-        
+
         if process.returncode == 0:
             logging.info(f"Subida exitosa: {file}")
 
@@ -262,7 +266,7 @@ async def handle_file_upload(user_id, chat_id, file):
                 shared_link = share_stdout.strip().decode('utf-8')
                 await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
 
-                # Enviar notificación al canal de logs
+                # Notificación al canal de logs
                 await bot.send_message(
                     LOG_CHANNEL,
                     f"✅ <b>Video Subido</b>\n\n📹 <b>Archivo:</b> {file}\n"
@@ -277,7 +281,7 @@ async def handle_file_upload(user_id, chat_id, file):
             await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")
             return
 
-        # Obtener duración y dimensiones del video usando ffmpeg
+        # Obtener duración y dimensiones del video
         duration, width, height = await get_video_metadata(file_path)
         if duration is None or width is None or height is None:
             await bot.send_message(user_id, f"❌ Error al obtener metadatos del archivo: {file}")
@@ -300,13 +304,13 @@ async def handle_file_upload(user_id, chat_id, file):
             await thumbnail_process.communicate()
             logging.info("Miniatura generada exitosamente")
         except Exception as e:
-            logging.error("Error al generar la miniatura: %s", e)
+            logging.error(f"Error al generar la miniatura: {e}")
             await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura.")
             if os.path.exists(thumbnail_path):
                 os.remove(thumbnail_path)
             return
 
-        # Envío del video al chat de Telegram con soporte para streaming y miniatura
+        # Envío del video a Telegram con soporte para streaming y miniatura
         if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
             await bot.send_file(
                 chat_id, 
@@ -323,7 +327,7 @@ async def handle_file_upload(user_id, chat_id, file):
         else:
             await send_large_file(chat_id, file_path, bot)
         
-        # Eliminar el archivo de miniatura y el archivo de video local tras envío exitoso
+        # Eliminar archivo de miniatura y archivo de video tras envío
         os.remove(thumbnail_path)
         os.remove(file_path)
         logging.info(f"Archivo eliminado: {file}")
@@ -368,24 +372,20 @@ async def send_large_file(chat_id, file_path, bot):
         part_num += 1
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
-    # Formatear la fecha y hora actual
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
 
     # Si ya existe una grabación activa para el mismo enlace
     if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
         logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
-        # Agregar el chat_id para compartir el progreso
         grabaciones[modelo]['chats'].add(chat_id)
         return
 
-    # Comando para iniciar descarga
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
         
-        # Mensaje de inicio de grabación y enlace para clips
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
         await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
@@ -395,52 +395,46 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             'file_path': output_file_path,
             'user_id': user_id,
             'm3u8_url': m3u8_url,
-            'chats': {chat_id}  # Conjunto de chats asociados a esta grabación
+            'chats': {chat_id}
         }
 
-        # Ejecutar la descarga en segundo plano
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL
+            stderr=asyncio.subprocess.PIPE
         )
 
-        # Leer la salida de stdout para monitorear el progreso de la descarga
         async def read_output(stream):
             while True:
                 line = await stream.readline()
                 if not line:
                     break
                 decoded_line = line.decode().strip()
-                if "M" in decoded_line:  
+                if "M" in decoded_line:
                     logging.info(f"Progreso de descarga: {decoded_line}")
 
-        # Leer stdout en tiempo real para mostrar el tamaño
         await read_output(process.stdout)
 
-        # Esperar a que el proceso termine
         await process.wait()
 
-        if process.returncode == 0:
+        if process.returncode == 0 and os.path.exists(output_file_path):
             file_size = os.path.getsize(output_file_path) / (1024 ** 2)
             logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
-            # Enviar el mensaje de finalización a todos los chats asociados
             for chat in grabaciones[modelo]['chats']:
                 await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
             await upload_and_delete_mp4_files(user_id, chat_id)
-
         else:
             for chat in grabaciones[modelo]['chats']:
                 await bot.send_message(chat, f"❌ Error al descargar para {modelo}")
 
     except Exception as e:
+        logging.error(f"Error durante la descarga para {modelo}: {e}")
         for chat in grabaciones[modelo]['chats']:
             await bot.send_message(chat, f"❌ Error durante la descarga para {modelo}: {e}")
-        logging.error(f"Error durante la descarga para {modelo}: {e}")
 
     finally:
-        # Elimina la grabación del diccionario
-        grabaciones.pop(modelo, None)
+        if modelo in grabaciones and not grabaciones[modelo]['chats']:
+            grabaciones.pop(modelo, None)
 
 # Función para obtener la información de la modelo
 async def obtener_informacion_modelo(modelo, user_id):
@@ -893,5 +887,6 @@ async def send_welcome(event):
 if __name__ == '__main__':
     logging.info("Iniciando el bot de Telegram")
     
-    bot.loop.create_task(verificar_enlaces())  # Lanza la verificación en paralelo
+    # Lanza la verificación de enlaces en paralelo
+    bot.loop.create_task(verificar_enlaces())
     bot.run_until_disconnected()
