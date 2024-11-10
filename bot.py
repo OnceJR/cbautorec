@@ -38,8 +38,13 @@ def setup_driver():
     chrome_options.add_argument("--disable-gpu")  # Puede mejorar la estabilidad en headless
     chrome_options.add_argument("--window-size=1920,1080")  # Evita problemas de tamaño en headless
 
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
-    return driver
+    try:
+        driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+        logging.info("ChromeDriver iniciado exitosamente.")
+        return driver
+    except Exception as e:
+        logging.error(f"Error al iniciar ChromeDriver: {e}")
+        return None
 
 LINKS_FILE = 'links.json'
 DOWNLOAD_PATH = "/root/cbautorec/"
@@ -182,9 +187,14 @@ async def upload_and_delete_mp4_files(user_id, chat_id):
         tasks = []  # Lista de tareas para procesar los archivos en paralelo
 
         for file in files:
-            tasks.append(asyncio.create_task(handle_file_upload(user_id, chat_id, file)))
+            # Ejecutar cada subida en una tarea separada para no bloquear el bot
+            task = asyncio.create_task(upload_and_notify(user_id, chat_id, file))
+            tasks.append(task)
 
-        # Esperar a que todas las tareas terminen sin bloquear el bot
+            # Eliminar el archivo local después de subirlo
+            task.add_done_callback(lambda t, file=file: os.remove(os.path.join(DOWNLOAD_PATH, file)))
+
+        # Ejecutar todas las tareas en paralelo y esperar a que terminen
         await asyncio.gather(*tasks)
 
     except Exception as e:
@@ -201,11 +211,26 @@ async def notify_recording_start(modelo, link, user_id):
     )
     await bot.send_message(LOG_CHANNEL, message, parse_mode="html")
 
+async def upload_and_notify(user_id, chat_id, file_path):
+    """
+    Función para cargar un archivo a Google Drive y notificar en Telegram.
+    Esto se ejecuta en paralelo sin bloquear la verificación de enlaces.
+    """
+    # Llamada a la función de manejo de subida que ya tienes configurada
+    await handle_file_upload(user_id, chat_id, file_path)
+
+    # Opcional: enviar mensaje adicional de confirmación si necesitas
+    logging.info(f"Subida y notificación completadas para {file_path}")
+
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
     command = ["rclone", "copy", file_path, GDRIVE_PATH]
     
     try:
+        if not os.path.exists(file_path):
+            await bot.send_message(user_id, f"❌ El archivo {file} no existe o fue movido.")
+            return
+
         # Ejecutar el proceso de subida a Google Drive
         process = await asyncio.create_subprocess_exec(
             *command,
@@ -259,7 +284,6 @@ async def handle_file_upload(user_id, chat_id, file):
             "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-qscale:v", "2", thumbnail_path
         ]
 
-        # Ejecutar el comando de miniatura de forma asíncrona para evitar bloqueos
         try:
             thumbnail_process = await asyncio.create_subprocess_exec(
                 *thumbnail_command,
@@ -271,6 +295,8 @@ async def handle_file_upload(user_id, chat_id, file):
         except Exception as e:
             logging.error("Error al generar la miniatura: %s", e)
             await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura.")
+            if os.path.exists(thumbnail_path):
+                os.remove(thumbnail_path)
             return
 
         # Envío del video al chat de Telegram con soporte para streaming y miniatura
@@ -298,6 +324,8 @@ async def handle_file_upload(user_id, chat_id, file):
     except Exception as e:
         logging.error(f"Error en la función handle_file_upload para {file}: {e}")
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtener duración del video con FFmpeg
