@@ -115,6 +115,12 @@ def is_valid_url(url):
 # Extracción de enlace m3u8 con Selenium
 async def extract_last_m3u8_link(driver, chaturbate_link):
     driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
+
+    # Validar que el driver esté activo antes de proceder
+    if driver is None:
+        logging.error("ChromeDriver no se pudo iniciar. Extracción de enlace m3u8 fallida.")
+        return None
+    
     try:
         # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
@@ -150,7 +156,8 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
         logging.error(f"Error al extraer el enlace: {e}")
         return None
     finally:
-        driver.quit()  # Asegura que el driver se cierre al finalizar
+        # Asegura que el driver se cierre al finalizar, incluso si ocurre un error
+        driver.quit()
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
