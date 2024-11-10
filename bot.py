@@ -340,7 +340,7 @@ async def handle_file_upload(user_id, chat_id, file):
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtener duración del video con FFmpeg
-    result = subprocess.run(
+    result = await asyncio.create_subprocess_exec(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT
@@ -356,7 +356,7 @@ async def send_large_file(chat_id, file_path, bot):
             part_path = temp_file.name
 
         # Dividir video en partes usando FFmpeg
-        subprocess.run([
+        await asyncio.create_subprocess_exec([
             "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time), "-t", str(part_duration),
             "-c", "copy", part_path
         ])
@@ -519,11 +519,11 @@ async def callback_alert(event):
     # Enviar el mensaje como una alerta emergente
     await event.answer(mensaje_alerta, alert=True)
     
-# Verificación y extracción periódica de enlaces m3u8 modificada para incluir el enlace original
+# Verificación periódica de enlaces m3u8 usando un solo driver
 async def verificar_enlaces():
     driver = setup_driver()  # Inicializa el driver solo una vez al inicio
 
-    while True:
+    while driver is not None:
         links = load_links()
         if not links:
             logging.warning("No se cargaron enlaces guardados.")
@@ -542,13 +542,14 @@ async def verificar_enlaces():
 
             for link in user_links:
                 if link not in processed_links:
+                    # Crear una tarea para procesar el enlace usando el mismo driver
                     task = asyncio.create_task(process_link(driver, user_id, link))
                     tasks.append(task)
                     processed_links[link] = task
 
         try:
             if tasks:
-                await asyncio.gather(*tasks)
+                await asyncio.gather(*tasks)  # Ejecuta todas las tareas en paralelo
         except Exception as e:
             logging.error(f"Error en el ciclo de verificación: {e}")
             driver.quit()  # Cierra el driver si ocurre un error crítico
@@ -556,8 +557,13 @@ async def verificar_enlaces():
         else:
             logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(60)  # Espera antes de la próxima verificación
 
+    # Cerrar el driver al finalizar el ciclo o si `driver` es None
+    if driver:
+        driver.quit()
+
+# Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
     m3u8_link = await extract_last_m3u8_link(driver, link)
     if m3u8_link:
