@@ -648,7 +648,9 @@ async def save_link(event):
     # Ignorar enlaces que terminan en .m3u8
     if event.text.endswith('.m3u8'):
         logging.info("Enlace .m3u8 detectado y omitido.")
-        await event.respond("⚠️ Enlace de tipo `.m3u8` detectado y omitido para grabación general.")
+        warning_message = await event.respond("⚠️ Enlace de tipo `.m3u8` detectado y omitido para grabación general.")
+        await asyncio.sleep(5)  # Espera 5 segundos antes de eliminar el mensaje
+        await warning_message.delete()
         return
     
     # Guardar el enlace si es válido
