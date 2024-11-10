@@ -694,6 +694,10 @@ async def check_recording_status(event):
     else:
         await event.respond("❗ No tienes un estado de grabación establecido.")
 
+def is_valid_url(url):
+    # Verificar si la URL es válida (puedes personalizar esta función)
+    return url.startswith("http://") or url.startswith("https://")
+
 @bot.on(events.NewMessage(pattern='/clip'))
 async def start_clip(event):
     if event.sender_id not in AUTHORIZED_USERS:
@@ -701,8 +705,7 @@ async def start_clip(event):
         return
 
     await event.reply(
-        "⚠️ Función de grabación de clips en <b>fase Beta</b>. Esta funcionalidad puede presentar errores.\n"
-        "Por favor, envía el enlace del stream para grabar un clip de 30 segundos.",
+        "⚠️ Grabación de clips en <b>fase Beta</b>. Envía el enlace del stream para grabar un clip de 30 segundos.",
         parse_mode='html'
     )
 
@@ -733,11 +736,10 @@ async def process_clip_link(event):
         # Ejecutar la grabación
         process = await asyncio.create_subprocess_exec(*record_command)
 
-        # Actualizar mensaje con el progreso en tiempo real
-        for i in range(1, 31):
-            emoji = "🔥 HOT" if i % 5 == 0 else ""
-            await progress_message.edit(f"⏳ Grabando... {i} segundos {emoji}")
-            await asyncio.sleep(1)
+        # Actualizar mensaje de progreso cada 5 segundos
+        for i in range(5, 31, 5):  # Se actualizará cada 5 segundos hasta llegar a 30
+            await asyncio.sleep(5)
+            await progress_message.edit(f"⏳ Grabando clip... {i} segundos")
 
         # Esperar a que el proceso de grabación termine
         await process.wait()
@@ -749,7 +751,8 @@ async def process_clip_link(event):
         await progress_message.edit("✅ Grabación completada. Enviando el clip...")
         await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
 
-        # Eliminar archivo local después de enviar
+        # Eliminar el mensaje de progreso y el archivo local después de enviar
+        await progress_message.delete()
         os.remove(filename)
         del pending_clips[event.sender_id]  # Limpiar el estado del usuario
 
