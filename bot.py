@@ -400,7 +400,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
-        logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
+        logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
         await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
@@ -411,20 +411,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Lee la salida y el progreso de la descarga en tiempo real
-        async def read_output(stream):
-            while True:
-                line = await stream.readline()
-                if not line:
-                    break
-                decoded_line = line.decode().strip()
-                if "M" in decoded_line:
-                    logging.info(f"Progreso de descarga: {decoded_line}")
-
-        # Leer tanto la salida estándar como de errores en paralelo
-        await asyncio.gather(read_output(process.stdout), read_output(process.stderr))
-
-        # Espera a que el proceso finalice
+        # Esperar a que el proceso finalice sin leer el progreso en tiempo real
         await process.wait()
 
         # Verificar que el archivo se haya descargado correctamente
