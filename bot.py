@@ -381,21 +381,21 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
 
-    # Si ya existe una grabación activa para el mismo enlace
+    # Verifica si ya hay una grabación activa para este enlace
     if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
         logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
         grabaciones[modelo]['chats'].add(chat_id)
         return
 
+    # Comando yt-dlp para descargar el stream
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
-        
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
         await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
-        # Registrar la grabación activa con información de usuarios
+        # Registrar la grabación activa con información del usuario
         grabaciones[modelo] = {
             'inicio': time.time(),
             'file_path': output_file_path,
@@ -404,12 +404,14 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             'chats': {chat_id}
         }
 
+        # Ejecutar yt-dlp como subproceso asincrónico
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
 
+        # Lee la salida y el progreso de la descarga en tiempo real
         async def read_output(stream):
             while True:
                 line = await stream.readline()
@@ -419,10 +421,13 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
                 if "M" in decoded_line:
                     logging.info(f"Progreso de descarga: {decoded_line}")
 
-        await read_output(process.stdout)
+        # Leer tanto la salida estándar como de errores en paralelo
+        await asyncio.gather(read_output(process.stdout), read_output(process.stderr))
 
+        # Espera a que el proceso finalice
         await process.wait()
 
+        # Verificar que el archivo se haya descargado correctamente
         if process.returncode == 0 and os.path.exists(output_file_path):
             file_size = os.path.getsize(output_file_path) / (1024 ** 2)
             logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
@@ -430,8 +435,10 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
                 await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
             await upload_and_delete_mp4_files(user_id, chat_id)
         else:
+            error_msg = f"❌ Error al descargar para {modelo}. Código de retorno: {process.returncode}"
+            logging.error(error_msg)
             for chat in grabaciones[modelo]['chats']:
-                await bot.send_message(chat, f"❌ Error al descargar para {modelo}")
+                await bot.send_message(chat, error_msg)
 
     except Exception as e:
         logging.error(f"Error durante la descarga para {modelo}: {e}")
@@ -439,6 +446,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             await bot.send_message(chat, f"❌ Error durante la descarga para {modelo}: {e}")
 
     finally:
+        # Limpiar grabaciones si no hay chats registrados para la descarga
         if modelo in grabaciones and not grabaciones[modelo]['chats']:
             grabaciones.pop(modelo, None)
 
