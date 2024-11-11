@@ -384,7 +384,11 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     # Verifica si ya hay una grabación activa para este modelo y enlace
     if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
         logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
+        
+        # Añadir el chat actual a la lista de chats registrados para esta grabación
         grabaciones[modelo]['chats'].add(chat_id)
+        
+        # Enviar solo un mensaje indicando que se está compartiendo la grabación activa
         await bot.send_message(chat_id, f"ℹ️ Ya hay una grabación activa para {modelo}. Compartiendo progreso.")
         return
 
@@ -397,21 +401,22 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
         'chats': {chat_id}
     }
 
+    # Solo enviar los mensajes de inicio una vez cuando la grabación realmente inicia
+    logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
+    await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
+    await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
+
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
-        logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
-        await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
-        await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
-
-        # Ejecutar yt-dlp como subproceso asincrónico
+        # Ejecutar yt-dlp como subproceso asincrónico sin registrar el progreso de cada segmento
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Esperar a que el proceso finalice sin leer el progreso en tiempo real
+        # Esperar a que el proceso finalice
         await process.wait()
 
         # Verificar que el archivo se haya descargado correctamente
