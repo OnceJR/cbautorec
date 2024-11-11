@@ -381,28 +381,28 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
 
-    # Verifica si ya hay una grabación activa para este enlace
+    # Verifica si ya hay una grabación activa para este modelo y enlace
     if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
         logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
         grabaciones[modelo]['chats'].add(chat_id)
+        await bot.send_message(chat_id, f"ℹ️ Ya hay una grabación activa para {modelo}. Compartiendo progreso.")
         return
 
-    # Comando yt-dlp para descargar el stream
+    # Registrar la grabación activa con información del usuario y el enlace
+    grabaciones[modelo] = {
+        'inicio': time.time(),
+        'file_path': output_file_path,
+        'user_id': user_id,
+        'm3u8_url': m3u8_url,
+        'chats': {chat_id}
+    }
+
     command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
     
     try:
         logging.info(f"Iniciando descarga con yt-dlp: {m3u8_url} para {modelo}")
         await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
         await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
-
-        # Registrar la grabación activa con información del usuario
-        grabaciones[modelo] = {
-            'inicio': time.time(),
-            'file_path': output_file_path,
-            'user_id': user_id,
-            'm3u8_url': m3u8_url,
-            'chats': {chat_id}
-        }
 
         # Ejecutar yt-dlp como subproceso asincrónico
         process = await asyncio.create_subprocess_exec(
