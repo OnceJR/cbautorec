@@ -345,7 +345,7 @@ async def handle_file_upload(user_id, chat_id, file):
             os.remove(file_path)
 
 async def send_large_file(chat_id, file_path, bot):
-    # Obtener duración del video con FFmpeg
+    # Obtener duración del video completo con FFmpeg
     command_ffprobe = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration", 
         "-of", "default=noprint_wrappers=1:nokey=1", file_path
@@ -374,6 +374,7 @@ async def send_large_file(chat_id, file_path, bot):
             part_path = temp_file.name
 
         try:
+            # Crear el segmento de video usando FFmpeg
             ffmpeg_command = [
                 "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time),
                 "-t", str(part_duration), "-c", "copy", part_path
@@ -382,7 +383,56 @@ async def send_large_file(chat_id, file_path, bot):
             await process.wait()
 
             if os.path.exists(part_path):
-                await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
+                # Obtener duración y dimensiones de cada parte
+                metadata_command = [
+                    "ffprobe", "-v", "error", "-select_streams", "v:0",
+                    "-show_entries", "stream=width,height,duration",
+                    "-of", "default=noprint_wrappers=1", part_path
+                ]
+                meta_process = await asyncio.create_subprocess_exec(
+                    *metadata_command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                meta_stdout, meta_stderr = await meta_process.communicate()
+
+                # Extraer valores de ancho, alto y duración
+                width, height, duration = None, None, None
+                for line in meta_stdout.decode().splitlines():
+                    if line.startswith("width="):
+                        width = int(line.split("=")[1])
+                    elif line.startswith("height="):
+                        height = int(line.split("=")[1])
+                    elif line.startswith("duration="):
+                        duration = int(float(line.split("=")[1]))
+
+                # Crear una miniatura para la parte de video
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
+                    thumbnail_path = temp_thumb.name
+                
+                thumbnail_command = [
+                    "ffmpeg", "-y", "-i", part_path, "-ss", "00:00:01.000", 
+                    "-vframes", "1", "-qscale:v", "2", thumbnail_path
+                ]
+                thumb_process = await asyncio.create_subprocess_exec(*thumbnail_command)
+                await thumb_process.wait()
+
+                # Enviar el archivo de video por partes con la miniatura y metadatos
+                await bot.send_file(
+                    chat_id,
+                    part_path,
+                    caption=f"📹 Parte {part_num}",
+                    thumb=thumbnail_path,
+                    attributes=[DocumentAttributeVideo(
+                        duration=duration,
+                        w=width,
+                        h=height,
+                        supports_streaming=True
+                    )]
+                )
+
+                # Eliminar la miniatura y la parte de video después de enviarlas
+                os.remove(thumbnail_path)
                 os.remove(part_path)
             else:
                 await bot.send_message(chat_id, "❌ Error al crear la parte del archivo.")
@@ -395,11 +445,6 @@ async def send_large_file(chat_id, file_path, bot):
             logging.error(f"Error durante la división y envío de archivo: {e}")
             await bot.send_message(chat_id, f"❌ Error al dividir/enviar el archivo: {e}")
             break
-
-import os
-import time
-import logging
-import asyncio
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
@@ -657,6 +702,142 @@ async def alerta_emergente(modelo, estado, user_id):
 # Define si el mensaje es un comando y si el bot ha sido mencionado
 async def is_bot_mentioned(event):
     return event.is_private or event.message.mentioned
+
+# Comando para revisar y detener grabaciones activas
+@bot.on(events.NewMessage(pattern='/check_grabaciones'))
+async def check_grabaciones(event):
+    user_id = event.sender_id
+
+    # Filtrar modelos en grabación específicos para el usuario
+    modelos_usuario = [
+        modelo for modelo, info in grabaciones.items() if info['user_id'] == user_id
+    ]
+
+    # Verificar si el usuario tiene grabaciones activas
+    if not modelos_usuario:
+        await event.respond("📡 Actualmente no tienes grabaciones activas.")
+        return
+
+    # Crear una lista de botones "Detener" para cada modelo que el usuario está grabando
+    buttons = [
+        [Button.inline(f"🛑 Detener {modelo}", data=f"stop_recording:{modelo}")]
+        for modelo in modelos_usuario
+    ]
+    
+    # Mensaje de bienvenida y guía
+    mensaje = (
+        "📋 <b>Grabaciones Activas</b>\n\n"
+        "Selecciona una grabación de la lista para detenerla y procesarla.\n"
+        "Al detener, el video se procesará y se subirá a Google Drive y Telegram.\n"
+    )
+    
+    # Enviar el mensaje con los botones
+    await event.respond(mensaje, buttons=buttons, parse_mode='html')
+
+# Callback para detener la grabación y procesarla
+@bot.on(events.CallbackQuery(data=lambda data: data.startswith(b"stop_recording")))
+async def stop_recording(event):
+    modelo = event.data.decode().split(':')[1]
+    user_id = event.sender_id
+
+    # Verificar si el modelo está en grabación activa
+    if modelo in grabaciones:
+        await event.answer(f"🛑 Deteniendo grabación de {modelo}...")
+        
+        # Detener la grabación
+        grab_info = grabaciones[modelo]
+        file_path = grab_info['file_path']
+        
+        # Procesar el archivo de video (ajustar dimensiones y miniatura)
+        await process_and_upload_video(user_id, event.chat_id, file_path, modelo)
+        
+        # Limpiar la información de grabación
+        grabaciones.pop(modelo, None)
+    else:
+        await event.answer(f"No se encontró una grabación activa para {modelo}.", alert=True)
+
+async def process_and_upload_video(user_id, chat_id, file_path, modelo):
+    # Comando ffprobe para obtener metadatos de duración y dimensiones
+    metadata_command = [
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,duration",
+        "-of", "default=noprint_wrappers=1", file_path
+    ]
+    meta_process = await asyncio.create_subprocess_exec(
+        *metadata_command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    meta_stdout, meta_stderr = await meta_process.communicate()
+
+    # Extraer valores de ancho, alto y duración
+    width, height, duration = None, None, None
+    for line in meta_stdout.decode().splitlines():
+        if line.startswith("width="):
+            width = int(line.split("=")[1])
+        elif line.startswith("height="):
+            height = int(line.split("=")[1])
+        elif line.startswith("duration="):
+            duration = int(float(line.split("=")[1]))
+
+    # Generar una miniatura del video
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
+        thumbnail_path = temp_thumb.name
+
+    thumbnail_command = [
+        "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000",
+        "-vframes", "1", "-qscale:v", "2", thumbnail_path
+    ]
+    thumb_process = await asyncio.create_subprocess_exec(*thumbnail_command)
+    await thumb_process.wait()
+
+    # Subir el video a Google Drive
+    await upload_to_gdrive(file_path, modelo)
+
+    # Enviar el video a Telegram con soporte de streaming y miniatura
+    if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
+        await bot.send_file(
+            chat_id, 
+            file_path, 
+            caption=f"📹 Grabación de {modelo}",
+            thumb=thumbnail_path,
+            attributes=[DocumentAttributeVideo(
+                duration=duration,
+                w=width,
+                h=height,
+                supports_streaming=True
+            )]
+        )
+    else:
+        await send_large_file(chat_id, file_path, bot)
+
+    # Limpiar archivos temporales y de video local
+    os.remove(thumbnail_path)
+    os.remove(file_path)
+
+async def upload_to_gdrive(file_path, modelo):
+    # Subir el archivo a Google Drive con rclone
+    command = ["rclone", "copy", file_path, GDRIVE_PATH]
+    process = await asyncio.create_subprocess_exec(*command)
+    await process.wait()
+
+    # Generar enlace compartido de Google Drive
+    share_command = ["rclone", "link", GDRIVE_PATH + os.path.basename(file_path)]
+    share_process = await asyncio.create_subprocess_exec(
+        *share_command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    share_stdout, _ = await share_process.communicate()
+
+    # Enviar el enlace de Google Drive al canal de log
+    shared_link = share_stdout.decode().strip()
+    await bot.send_message(
+        LOG_CHANNEL,
+        f"✅ <b>Video Subido</b>\n\n📹 <b>Modelo:</b> {modelo}\n"
+        f"🔗 <b>Enlace:</b> {shared_link}",
+        parse_mode="html"
+    )
 
 # Comando de inicio de monitoreo y grabación
 @bot.on(events.NewMessage(pattern='/grabar'))
