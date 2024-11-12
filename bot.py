@@ -346,14 +346,26 @@ async def handle_file_upload(user_id, chat_id, file):
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtener duración del video con FFmpeg
-    result = await asyncio.create_subprocess_exec(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT
-    )
-    total_duration = float(result.stdout)  # Duración total en segundos
-    part_duration = 60 * 30  # 30 minutos por parte
+    command_ffprobe = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration", 
+        "-of", "default=noprint_wrappers=1:nokey=1", file_path
+    ]
 
+    process = await asyncio.create_subprocess_exec(
+        *command_ffprobe,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await process.communicate()
+
+    try:
+        total_duration = float(stdout.decode().strip())
+    except ValueError as e:
+        logging.error(f"Error al obtener duración del archivo {file_path}: {e}")
+        await bot.send_message(chat_id, f"❌ No se pudo obtener la duración del archivo.")
+        return
+    
+    part_duration = 60 * 30  # Dividir en partes de 30 minutos
     current_time = 0
     part_num = 1
 
@@ -361,21 +373,33 @@ async def send_large_file(chat_id, file_path, bot):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_file:
             part_path = temp_file.name
 
-        # Dividir video en partes usando FFmpeg
-        await asyncio.create_subprocess_exec([
-            "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time), "-t", str(part_duration),
-            "-c", "copy", part_path
-        ])
-        
-        # Enviar el archivo de video por partes
-        await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
+        try:
+            ffmpeg_command = [
+                "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time),
+                "-t", str(part_duration), "-c", "copy", part_path
+            ]
+            process = await asyncio.create_subprocess_exec(*ffmpeg_command)
+            await process.wait()
 
-        # Eliminar parte temporal después de enviarla
-        os.remove(part_path)
+            if os.path.exists(part_path):
+                await bot.send_file(chat_id, part_path, caption=f"📹 Parte {part_num}")
+                os.remove(part_path)
+            else:
+                await bot.send_message(chat_id, "❌ Error al crear la parte del archivo.")
+                break
 
-        # Actualizar tiempos para la siguiente parte
-        current_time += part_duration
-        part_num += 1
+            current_time += part_duration
+            part_num += 1
+
+        except Exception as e:
+            logging.error(f"Error durante la división y envío de archivo: {e}")
+            await bot.send_message(chat_id, f"❌ Error al dividir/enviar el archivo: {e}")
+            break
+
+import os
+import time
+import logging
+import asyncio
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
@@ -416,8 +440,8 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Esperar a que el proceso finalice
-        await process.wait()
+        # Capturar salida y errores del proceso
+        stdout, stderr = await process.communicate()
 
         # Verificar que el archivo se haya descargado correctamente
         if process.returncode == 0 and os.path.exists(output_file_path):
@@ -427,20 +451,28 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
                 await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
             await upload_and_delete_mp4_files(user_id, chat_id)
         else:
-            error_msg = f"❌ Error al descargar para {modelo}. Código de retorno: {process.returncode}"
+            error_msg = (
+                f"❌ Error en la descarga de {modelo}. "
+                f"Código de retorno: {process.returncode}\n"
+                f"Salida de error: {stderr.decode()}"
+            )
             logging.error(error_msg)
             for chat in grabaciones[modelo]['chats']:
                 await bot.send_message(chat, error_msg)
 
     except Exception as e:
-        logging.error(f"Error durante la descarga para {modelo}: {e}")
+        logging.error(f"Excepción durante la descarga de {modelo}: {e}")
         for chat in grabaciones[modelo]['chats']:
-            await bot.send_message(chat, f"❌ Error durante la descarga para {modelo}: {e}")
+            await bot.send_message(chat, f"❌ Excepción en la descarga para {modelo}: {e}")
 
     finally:
         # Limpiar grabaciones si no hay chats registrados para la descarga
         if modelo in grabaciones and not grabaciones[modelo]['chats']:
             grabaciones.pop(modelo, None)
+        # Asegurar que el archivo se elimine si la descarga falló
+        if not os.path.exists(output_file_path):
+            logging.info(f"Eliminando archivo incompleto: {output_file_path}")
+            os.remove(output_file_path)
 
 # Función para obtener la información de la modelo
 async def obtener_informacion_modelo(modelo, user_id):
