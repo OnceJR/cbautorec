@@ -461,15 +461,16 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
         await bot.send_message(chat_id, f"ℹ️ Ya hay una grabación activa para {modelo}. Compartiendo progreso.")
         return
 
-    # Registrar la grabación activa con información del usuario y el enlace
+    # Almacenar el proceso en el diccionario `grabaciones`
     grabaciones[modelo] = {
         'inicio': time.time(),
         'file_path': output_file_path,
         'user_id': user_id,
         'm3u8_url': m3u8_url,
-        'chats': {chat_id}
+        'chats': {chat_id},
+        'process': process  # Guardar el proceso aquí
     }
-
+    
     # Solo enviar los mensajes de inicio una vez cuando la grabación realmente inicia
     logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
     await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
@@ -739,7 +740,7 @@ async def check_grabaciones(event):
     # Enviar el mensaje con los botones
     await event.respond(mensaje, buttons=buttons, parse_mode='html')
 
-# Callback para detener la grabación y procesarla
+# Modificar la función `stop_recording` para detener el proceso y procesar el archivo `.part`
 @bot.on(events.CallbackQuery(data=lambda data: data.startswith(b"stop_recording")))
 async def stop_recording(event):
     modelo = event.data.decode().split(':')[1]
@@ -749,11 +750,23 @@ async def stop_recording(event):
     if modelo in grabaciones:
         await event.answer(f"🛑 Deteniendo grabación de {modelo}...")
         
-        # Detener la grabación
+        # Detener el proceso de descarga
         grab_info = grabaciones[modelo]
+        process = grab_info.get('process')
+        
+        if process:
+            process.terminate()  # Detener el proceso
+            await process.wait()  # Esperar a que se cierre completamente
+        
+        # Procesar el archivo .part
+        part_file_path = f"{grab_info['file_path']}.part"
         file_path = grab_info['file_path']
         
-        # Procesar el archivo de video (ajustar dimensiones y miniatura)
+        # Si el archivo .part existe, renombrarlo a archivo final
+        if os.path.exists(part_file_path):
+            os.rename(part_file_path, file_path)
+        
+        # Procesar el archivo renombrado o el archivo final existente
         await process_and_upload_video(user_id, event.chat_id, file_path, modelo)
         
         # Limpiar la información de grabación
