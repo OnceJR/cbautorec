@@ -449,42 +449,34 @@ async def send_large_file(chat_id, file_path, bot):
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
+    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
 
-    # Verifica si ya hay una grabación activa para este modelo y enlace
-    if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_url:
-        logging.info(f"Ya existe una grabación activa para {modelo}. Compartiendo progreso.")
-        
-        # Añadir el chat actual a la lista de chats registrados para esta grabación
-        grabaciones[modelo]['chats'].add(chat_id)
-        
-        # Enviar solo un mensaje indicando que se está compartiendo la grabación activa
-        await bot.send_message(chat_id, f"ℹ️ Ya hay una grabación activa para {modelo}. Compartiendo progreso.")
-        return
-
-    # Almacenar el proceso en el diccionario `grabaciones`
-    grabaciones[modelo] = {
-        'inicio': time.time(),
-        'file_path': output_file_path,
-        'user_id': user_id,
-        'm3u8_url': m3u8_url,
-        'chats': {chat_id},
-        'process': process  # Guardar el proceso aquí
-    }
-    
     # Solo enviar los mensajes de inicio una vez cuando la grabación realmente inicia
     logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
     await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
     await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
-    command_yt_dlp = ['yt-dlp', '-f', 'best', m3u8_url, '-o', output_file_path]
-    
+    # Inicializar `process` en None para evitar problemas de referencia
+    process = None
+
     try:
-        # Ejecutar yt-dlp como subproceso asincrónico sin registrar el progreso de cada segmento
+        # Ejecutar yt-dlp como subproceso asincrónico
         process = await asyncio.create_subprocess_exec(
             *command_yt_dlp,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+        
+        # Almacenar el proceso en el diccionario `grabaciones` solo si el proceso se inicia correctamente
+        if process:
+            grabaciones[modelo] = {
+                'inicio': time.time(),
+                'file_path': output_file_path,
+                'user_id': user_id,
+                'm3u8_url': m3u8_url,
+                'chats': {chat_id},
+                'process': process  # Guardar el proceso aquí
+            }
 
         # Capturar salida y errores del proceso
         stdout, stderr = await process.communicate()
@@ -515,8 +507,9 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
         # Limpiar grabaciones si no hay chats registrados para la descarga
         if modelo in grabaciones and not grabaciones[modelo]['chats']:
             grabaciones.pop(modelo, None)
+        
         # Asegurar que el archivo se elimine si la descarga falló
-        if not os.path.exists(output_file_path):
+        if not os.path.exists(output_file_path) and process is not None:
             logging.info(f"Eliminando archivo incompleto: {output_file_path}")
             os.remove(output_file_path)
 
