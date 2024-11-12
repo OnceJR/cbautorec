@@ -708,6 +708,11 @@ async def is_bot_mentioned(event):
 async def check_grabaciones(event):
     user_id = event.sender_id
 
+    # Verificar si el usuario está autorizado
+    if user_id not in AUTHORIZED_USERS:
+        await event.respond("❌ No tienes permiso para usar este comando.")
+        return
+
     # Filtrar modelos en grabación específicos para el usuario
     modelos_usuario = [
         modelo for modelo, info in grabaciones.items() if info['user_id'] == user_id
@@ -1103,6 +1108,7 @@ async def send_welcome(event):
         "<b>Comandos disponibles:</b>\n\n"
         "• <b>/grabar</b> - Inicia el monitoreo y grabación automática de una transmisión en vivo.\n"
         "• <b>/check_modelo</b> - Muestra una lista de modelos actualmente en grabación. Selecciona un modelo para ver detalles.\n"
+        "• <b>/check_grabaciones</b> - Lista las grabaciones activas, permitiendo detenerlas y procesarlas para subirlas.\n\n"
         "• <b>/mis_enlaces</b> - Muestra los enlaces de transmisiones guardados por el usuario.\n"
         "• <b>/eliminar_enlace</b> - Elimina un enlace guardado (usa: <code>/eliminar_enlace [enlace]</code>).\n"
         "• <b>/status</b> - Verifica el estado general del bot.\n\n"
