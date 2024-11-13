@@ -344,13 +344,18 @@ async def handle_file_upload(user_id, chat_id, file):
         if os.path.exists(file_path):
             os.remove(file_path)
 
+import os
+import tempfile
+import logging
+import asyncio
+from telethon.tl.types import DocumentAttributeVideo
+
 async def send_large_file(chat_id, file_path, bot):
-    # Obtener duración del video completo con FFmpeg
+    # Obtain the total duration of the video file
     command_ffprobe = [
         "ffprobe", "-v", "error", "-show_entries", "format=duration", 
         "-of", "default=noprint_wrappers=1:nokey=1", file_path
     ]
-
     process = await asyncio.create_subprocess_exec(
         *command_ffprobe,
         stdout=asyncio.subprocess.PIPE,
@@ -362,10 +367,10 @@ async def send_large_file(chat_id, file_path, bot):
         total_duration = float(stdout.decode().strip())
     except ValueError as e:
         logging.error(f"Error al obtener duración del archivo {file_path}: {e}")
-        await bot.send_message(chat_id, f"❌ No se pudo obtener la duración del archivo.")
+        await bot.send_message(chat_id, "❌ No se pudo obtener la duración del archivo.")
         return
     
-    part_duration = 60 * 30  # Dividir en partes de 30 minutos
+    part_duration = 60 * 30  # Split into 30-minute parts
     current_time = 0
     part_num = 1
 
@@ -374,7 +379,7 @@ async def send_large_file(chat_id, file_path, bot):
             part_path = temp_file.name
 
         try:
-            # Crear el segmento de video usando FFmpeg
+            # Create each video segment with FFmpeg
             ffmpeg_command = [
                 "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time),
                 "-t", str(part_duration), "-c", "copy", part_path
@@ -383,7 +388,7 @@ async def send_large_file(chat_id, file_path, bot):
             await process.wait()
 
             if os.path.exists(part_path):
-                # Obtener duración y dimensiones de cada parte
+                # Obtain metadata for each part
                 metadata_command = [
                     "ffprobe", "-v", "error", "-select_streams", "v:0",
                     "-show_entries", "stream=width,height,duration",
@@ -396,7 +401,7 @@ async def send_large_file(chat_id, file_path, bot):
                 )
                 meta_stdout, meta_stderr = await meta_process.communicate()
 
-                # Extraer valores de ancho, alto y duración
+                # Extract width, height, and duration values
                 width, height, duration = None, None, None
                 for line in meta_stdout.decode().splitlines():
                     if line.startswith("width="):
@@ -406,7 +411,7 @@ async def send_large_file(chat_id, file_path, bot):
                     elif line.startswith("duration="):
                         duration = int(float(line.split("=")[1]))
 
-                # Crear una miniatura para la parte de video
+                # Generate a thumbnail for each part
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
                     thumbnail_path = temp_thumb.name
                 
@@ -417,7 +422,7 @@ async def send_large_file(chat_id, file_path, bot):
                 thumb_process = await asyncio.create_subprocess_exec(*thumbnail_command)
                 await thumb_process.wait()
 
-                # Enviar el archivo de video por partes con la miniatura y metadatos
+                # Send the part with thumbnail and metadata to Telegram
                 await bot.send_file(
                     chat_id,
                     part_path,
@@ -431,7 +436,7 @@ async def send_large_file(chat_id, file_path, bot):
                     )]
                 )
 
-                # Eliminar la miniatura y la parte de video después de enviarlas
+                # Remove the thumbnail and part files after sending
                 os.remove(thumbnail_path)
                 os.remove(part_path)
             else:
