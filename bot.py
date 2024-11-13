@@ -449,82 +449,72 @@ async def send_large_file(chat_id, file_path, bot):
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
     output_file_path = os.path.join(DOWNLOAD_PATH, f"{modelo}_{fecha_hora}.mp4")
-    command_yt_dlp = ['yt-dlp', m3u8_url, '-o', output_file_path]
+    command_yt_dlp = ['yt-dlp', m3u8_url, '-o', output_file_path]  # Omitimos -f best
 
-    # Notify start of download
-    logging.info(f"Descarga iniciada exitosamente con yt-dlp para {modelo}")
+    # Mensajes de inicio de descarga
+    logging.info(f"Descarga iniciada con yt-dlp para {modelo}")
     await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
     await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
-    # Define the process variable to avoid reference issues
+    # Inicializar `process` en None para evitar problemas de referencia
     process = None
-    max_retries = 3
-    retry_count = 0
 
-    while retry_count < max_retries:
-        try:
-            # Start the download subprocess
-            process = await asyncio.create_subprocess_exec(
-                *command_yt_dlp,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # Update the grabaciones dictionary to track the process
-            grabaciones[modelo] = {
-                'inicio': time.time(),
-                'file_path': output_file_path,
-                'user_id': user_id,
-                'm3u8_url': m3u8_url,
-                'chats': {chat_id},
-                'process': process
-            }
-            
-            # Capture stdout and stderr
-            stdout, stderr = await process.communicate()
+    try:
+        # Ejecutar yt-dlp como subproceso asincrónico
+        process = await asyncio.create_subprocess_exec(
+            *command_yt_dlp,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        # Almacenar el proceso en `grabaciones` solo si el proceso se inicia correctamente
+        grabaciones[modelo] = {
+            'inicio': time.time(),
+            'file_path': output_file_path,
+            'user_id': user_id,
+            'm3u8_url': m3u8_url,
+            'chats': {chat_id},
+            'process': process  # Guardar el proceso aquí
+        }
 
-            # If download was successful, break out of the retry loop
-            if process.returncode == 0 and os.path.exists(output_file_path):
-                file_size = os.path.getsize(output_file_path) / (1024 ** 2)
-                logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
-                for chat in grabaciones[modelo]['chats']:
-                    await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
-                await upload_and_delete_mp4_files(user_id, chat_id)
-                break
-            else:
-                # Log the error message if download failed
-                error_msg = f"❌ Error en la descarga de {modelo}. Código de retorno: {process.returncode}\nSalida de error: {stderr.decode()}"
-                logging.error(error_msg)
-                for chat in grabaciones[modelo]['chats']:
-                    await bot.send_message(chat, error_msg)
+        # Capturar salida y errores del proceso
+        stdout, stderr = await process.communicate()
 
-        except Exception as e:
-            # Handle any exceptions that may arise during the process
-            logging.error(f"Excepción durante la descarga de {modelo}: {e}")
+        # Verificar que el archivo se haya descargado correctamente
+        if process.returncode == 0 and os.path.exists(output_file_path):
+            file_size = os.path.getsize(output_file_path) / (1024 ** 2)
+            logging.info(f"Descarga completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
             for chat in grabaciones[modelo]['chats']:
-                await bot.send_message(chat, f"❌ Excepción en la descarga para {modelo}: {e}")
-
-        # Increment retry counter and check if max retries reached
-        retry_count += 1
-        if retry_count < max_retries:
-            logging.info(f"Reintentando descarga para {modelo}... Intento {retry_count + 1} de {max_retries}")
-            await asyncio.sleep(5)  # Wait 5 seconds before retrying
-
-    if retry_count == max_retries:
-        # Send failure message if max retries reached
-        logging.error(f"❌ La descarga para {modelo} falló después de {max_retries} intentos.")
-        for chat in grabaciones[modelo]['chats']:
-            await bot.send_message(chat, f"❌ No se pudo completar la descarga para {modelo} después de varios intentos.")
-
-    finally:
-        # Clean up if no chats are registered for the download
-        if modelo in grabaciones and not grabaciones[modelo]['chats']:
+                await bot.send_message(chat, f"✅ Grabación completa para {modelo}. Tamaño del archivo: {file_size:.2f} MB")
+            await upload_and_delete_mp4_files(user_id, chat_id)
+        else:
+            error_msg = (
+                f"❌ Error en la descarga de {modelo}. "
+                f"Código de retorno: {process.returncode}\n"
+                f"Salida de error: {stderr.decode()}"
+            )
+            logging.error(error_msg)
+            for chat in grabaciones[modelo]['chats']:
+                await bot.send_message(chat, error_msg)
+            # Eliminamos de `grabaciones` si falla
             grabaciones.pop(modelo, None)
 
-        # Ensure incomplete file is deleted if download failed
-        if not os.path.exists(output_file_path):
+    except Exception as e:
+        logging.error(f"Excepción durante la descarga de {modelo}: {e}")
+        for chat in grabaciones[modelo]['chats']:
+            await bot.send_message(chat, f"❌ Excepción en la descarga para {modelo}: {e}")
+        # Eliminamos de `grabaciones` si falla
+        grabaciones.pop(modelo, None)
+
+    finally:
+        # Aseguramos que el archivo se elimine si la descarga falló
+        if process is not None and os.path.exists(output_file_path) and process.returncode != 0:
             logging.info(f"Eliminando archivo incompleto: {output_file_path}")
             os.remove(output_file_path)
+
+        # Limpiar grabaciones si no hay chats registrados para la descarga
+        if modelo in grabaciones and not grabaciones[modelo]['chats']:
+            grabaciones.pop(modelo, None)
 
 # Función para obtener la información de la modelo
 async def obtener_informacion_modelo(modelo, user_id):
