@@ -117,37 +117,25 @@ def is_valid_url(url):
 
 # Extracción de enlace m3u8 con Selenium
 async def extract_last_m3u8_link(driver, chaturbate_link):
-    driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
-
-    # Validar que el driver esté activo antes de proceder
-    if driver is None:
-        logging.error("ChromeDriver no se pudo iniciar. Extracción de enlace m3u8 fallida.")
-        return None
-    
     try:
-        # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-        
-        # Esperar a que el campo de entrada esté disponible y enviar el enlace
+
         input_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
-        input_field.send_keys(chaturbate_link)  # Usar chaturbate_link en lugar de link
+        input_field.send_keys(chaturbate_link)
 
-        # Esperar y hacer clic en el botón "Run"
         run_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]'))
         )
         run_button.click()
-        logging.info("Botón 'Run' clickeado, esperando a que se procesen los enlaces...")
+        logging.info("Botón 'Run' clickeado, esperando enlaces m3u8...")
 
-        # Esperar a que los enlaces m3u8 se generen y estén disponibles
         m3u8_links = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, '//pre/a'))
         )
 
-        # Obtener el último enlace m3u8 si existe
         if m3u8_links:
             last_m3u8_link = m3u8_links[-1].get_attribute('href')
             logging.info(f"Enlace m3u8 extraído: {last_m3u8_link}")
@@ -158,9 +146,6 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
         return None
-    finally:
-        # Asegura que el driver se cierre al finalizar, incluso si ocurre un error
-        driver.quit()
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
@@ -603,69 +588,52 @@ async def callback_alert(event):
     
 # Verificación periódica de enlaces m3u8 usando un solo driver
 async def verificar_enlaces():
-    driver = setup_driver()  # Inicializa el driver solo una vez al inicio
-
-    while driver is not None:
+    while True:
         links = load_links()
         if not links:
-            logging.warning("No se cargaron enlaces guardados.")
+            logging.warning("No hay enlaces guardados para verificar.")
             await asyncio.sleep(60)
             continue
 
-        tasks = []
-        processed_links = {}
-
         for user_id_str, user_links in links.items():
-            try:
-                user_id = int(user_id_str)
-            except ValueError as e:
-                logging.error(f"Error de conversión para user_id_str '{user_id_str}': {e}")
-                continue
-
+            user_id = int(user_id_str)
             for link in user_links:
-                if link not in processed_links:
-                    # Crear una tarea para procesar el enlace usando el mismo driver
-                    task = asyncio.create_task(process_link(driver, user_id, link))
-                    tasks.append(task)
-                    processed_links[link] = task
+                try:
+                    # Inicializa el driver solo cuando se necesite
+                    driver = setup_driver()
+                    if driver is None:
+                        logging.error("No se pudo inicializar el driver.")
+                        continue
+                    
+                    await process_link(driver, user_id, link)
+                finally:
+                    # Asegúrate de cerrar el driver después de procesar el enlace
+                    if driver:
+                        driver.quit()
 
-        try:
-            if tasks:
-                await asyncio.gather(*tasks)  # Ejecuta todas las tareas en paralelo
-        except Exception as e:
-            logging.error(f"Error en el ciclo de verificación: {e}")
-            driver.quit()  # Cierra el driver si ocurre un error crítico
-            driver = setup_driver()  # Reinstancia el driver en caso de error
-        else:
-            logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
-
-        await asyncio.sleep(60)  # Espera antes de la próxima verificación
-
-    # Cerrar el driver al finalizar el ciclo o si `driver` es None
-    if driver:
-        driver.quit()
+        await asyncio.sleep(60)  # Espera antes de la siguiente verificación
 
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
-    m3u8_link = await extract_last_m3u8_link(driver, link)
-    if m3u8_link:
-        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
+    try:
+        m3u8_link = await extract_last_m3u8_link(driver, link)
+        if m3u8_link:
+            modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
 
-        # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
-        if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
-            logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
-            grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
-            await alerta_emergente(modelo, 'online', user_id)
+            if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
+                logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
+                grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
+                await alerta_emergente(modelo, 'online', user_id)
+            else:
+                await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
         else:
-            # Iniciar una nueva grabación y registrar en grabaciones activas
-            await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
-    else:
-        # Notificar estado offline si el enlace m3u8 no se pudo obtener
-        modelo = link.rstrip('/').split('/')[-1]
-        if modelo in grabaciones:
-            await alerta_emergente(modelo, 'offline', user_id)
-            grabaciones.pop(modelo, None)
-        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+            modelo = link.rstrip('/').split('/')[-1]
+            if modelo in grabaciones:
+                await alerta_emergente(modelo, 'offline', user_id)
+                grabaciones.pop(modelo, None)
+            logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+    except Exception as e:
+        logging.error(f"Error procesando enlace: {e}")
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
