@@ -36,8 +36,8 @@
 
 1. **Clona el repositorio**:
    ```bash
-   git clone https://github.com/tu_usuario/cb-auto-recorder.git
-   cd cb-auto-recorder
+   git clone https://github.com/oncejr/cbautorec.git
+   cd cbautorec
    ```
 
 2. **Configura un entorno virtual**:
@@ -55,7 +55,7 @@
    - Sigue las instrucciones oficiales de configuración de `rclone` para Google Drive.
 
 5. **Actualiza las credenciales del bot**:
-   - Rellena las variables en el archivo `config.py` o en el código:
+   - Rellena las variables en el archivo `config.json` o en el código:
      - `API_ID`, `API_HASH`, `BOT_TOKEN`.
 
 ---
@@ -116,4 +116,4 @@ Este proyecto está bajo la licencia [MIT](LICENSE). Consulta el archivo `LICENS
 
 ## 📬 **Contacto**
 
-Si tienes preguntas, sugerencias o necesitas soporte, puedes contactarme en [Telegram](https://t.me/tu_usuario).
+Si tienes preguntas, sugerencias o necesitas soporte, puedes contactarme en [Telegram](https://t.me/FTVOWN).
