@@ -53,6 +53,7 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
+DOODSTREAM_API_KEY = "470375e32zzcqzbz5sf7ba"
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -345,12 +346,6 @@ async def handle_file_upload(user_id, chat_id, file):
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
         if os.path.exists(file_path):
             os.remove(file_path)
-
-import os
-import tempfile
-import logging
-import asyncio
-from telethon.tl.types import DocumentAttributeVideo
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtain the total duration of the video file
@@ -835,6 +830,85 @@ async def process_and_upload_video(user_id, chat_id, file_path, modelo):
     # Limpiar archivos temporales y de video local
     os.remove(thumbnail_path)
     os.remove(file_path)
+
+
+def get_upload_server():
+    """
+    Obtiene el servidor de subida desde Doodstream.
+    """
+    url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") == 200 and "result" in data:
+            return data["result"]
+        else:
+            logging.error(f"Error al obtener el servidor de Doodstream: {data.get('msg')}")
+            return None
+    except requests.RequestException as e:
+        logging.error(f"Error al conectar con Doodstream: {e}")
+        return None
+
+def upload_to_doodstream(file_path):
+    """
+    Sube un archivo a Doodstream usando el servidor obtenido.
+    :param file_path: Ruta del archivo local a subir.
+    :return: URL del video en Doodstream o mensaje de error.
+    """
+    server = get_upload_server()
+    if not server:
+        return "❌ No se pudo obtener el servidor de Doodstream."
+
+    try:
+        # Realizar la subida
+        with open(file_path, "rb") as file:
+            files = {"file": file}
+            data = {"api_key": DOODSTREAM_API_KEY}
+            response = requests.post(server, files=files, data=data)
+            response.raise_for_status()
+
+            # Procesar la respuesta de la subida
+            upload_data = response.json()
+            if upload_data.get("status") == 200:
+                result = upload_data["result"][0]
+                return {
+                    "video_url": result.get("download_url"),
+                    "embed_url": result.get("protected_embed"),
+                    "thumbnail_url": result.get("splash_img")
+                }
+            else:
+                return f"❌ Error subiendo archivo: {upload_data.get('msg')}"
+    except requests.RequestException as e:
+        logging.error(f"Error durante la subida a Doodstream: {e}")
+        return f"❌ Error durante la subida: {e}"
+
+# Ejemplo de integración en el bot
+async def process_and_upload_to_doodstream(user_id, chat_id, file_path):
+    """
+    Procesa el archivo y lo sube a Doodstream, notificando al usuario.
+    """
+    await bot.send_message(chat_id, "⏳ Subiendo video a Doodstream...")
+
+    result = upload_to_doodstream(file_path)
+
+    if isinstance(result, dict):
+        # Enviar los enlaces al usuario
+        video_url = result.get("video_url")
+        embed_url = result.get("embed_url")
+        thumbnail_url = result.get("thumbnail_url")
+
+        message = (
+            f"✅ <b>Video Subido a Doodstream</b>\n\n"
+            f"🔗 <b>Descargar:</b> {video_url}\n"
+            f"🔗 <b>Ver Online:</b> {embed_url}\n"
+            f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
+        )
+        await bot.send_message(chat_id, message, parse_mode="html")
+    else:
+        # Notificar si hubo un error
+        await bot.send_message(chat_id, result)
 
 async def upload_to_gdrive(file_path, modelo):
     # Subir el archivo a Google Drive con rclone
