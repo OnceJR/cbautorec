@@ -632,25 +632,32 @@ async def verificar_enlaces():
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
     try:
-        logging.info(f"Extrayendo enlace m3u8 para: {link}")
+        logging.info(f"Iniciando extracción de enlace m3u8 para el enlace: {link}")
         m3u8_link = await extract_last_m3u8_link(driver, link)
-        
+
         if m3u8_link:
             modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
             logging.info(f"Enlace m3u8 extraído: {m3u8_link} para modelo: {modelo}")
 
             # Verifica si ya hay una grabación activa
             if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
-                logging.info(f"Grabación ya activa para {modelo}. Actualizando progreso.")
+                logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
                 grabaciones[modelo]['chats'].add(user_id)
                 await alerta_emergente(modelo, 'online', user_id)
             else:
-                logging.info(f"Iniciando nueva grabación para {modelo}")
+                logging.info(f"Iniciando nueva grabación para el modelo: {modelo}")
+                grabaciones[modelo] = {
+                    'inicio': time.time(),
+                    'file_path': None,
+                    'user_id': user_id,
+                    'm3u8_url': m3u8_link,
+                    'chats': {user_id}
+                }
                 await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
         else:
             modelo = link.rstrip('/').split('/')[-1]
             logging.warning(f"No se pudo obtener un enlace m3u8 válido para: {link}")
-            
+
             # Actualiza el estado a offline si estaba grabando
             if modelo in grabaciones:
                 logging.info(f"{modelo} está offline. Eliminando de grabaciones activas.")
