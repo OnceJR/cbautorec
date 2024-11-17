@@ -461,7 +461,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     # Mensajes de inicio de descarga
     logging.info(f"Descarga iniciada con yt-dlp para {modelo}")
     await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
-    await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
+    await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_link}")
 
     # Inicializar `process` en None para evitar problemas de referencia
     process = None
@@ -968,7 +968,7 @@ async def process_clip_link(event):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
 
-        modelo = url.split('/')[-1].split('.')[0]
+        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo desde el enlace
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
 
@@ -1012,13 +1012,13 @@ async def admin_reset(event):
         await event.respond("❌ No tienes permiso para ejecutar este comando.")
         return
 
-    # Elimina todos los archivos en el directorio de descargas
+    # Elimina solo los archivos .part y .mp4 en el directorio de descargas
     try:
         for file in os.listdir(DOWNLOAD_PATH):
             file_path = os.path.join(DOWNLOAD_PATH, file)
-            if os.path.isfile(file_path):
+            if os.path.isfile(file_path) and (file.endswith('.part') or file.endswith('.mp4')):
                 os.remove(file_path)
-        await event.respond("✅ Todos los archivos en el servidor han sido eliminados.")
+        await event.respond("✅ Se han eliminado todos los archivos .part y .mp4 en el servidor.")
     except Exception as e:
         await event.respond(f"❌ Error eliminando archivos: {e}")
         return
