@@ -18,12 +18,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
-with open('config.json', 'r') as f:
-    config = json.load(f)
-
-API_ID = config['API_ID']
-API_HASH = config['API_HASH']
-BOT_TOKEN = config['BOT_TOKEN']
+# Configuración de la API
+API_ID = 24738183
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
+BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -53,7 +51,6 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
-DOODSTREAM_API_KEY = "470375e32zzcqzbz5sf7ba"
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -117,47 +114,50 @@ def is_valid_url(url):
 
 # Extracción de enlace m3u8 con Selenium
 async def extract_last_m3u8_link(driver, chaturbate_link):
+    driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
+
+    # Validar que el driver esté activo antes de proceder
+    if driver is None:
+        logging.error("ChromeDriver no se pudo iniciar. Extracción de enlace m3u8 fallida.")
+        return None
+    
     try:
-        logging.info(f"Navegando a la página de extracción m3u8...")
+        # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
-
-        # Verifica si la página cargó correctamente
-        if not driver.title:
-            logging.warning("La página no se cargó correctamente. Verifica la conexión.")
-            return None
-
-        # Encuentra y llena el campo de entrada
-        input_field = WebDriverWait(driver, 15).until(
+        
+        # Esperar a que el campo de entrada esté disponible y enviar el enlace
+        input_field = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
-        input_field.send_keys(chaturbate_link)
-        logging.info(f"Enlace enviado al extractor: {chaturbate_link}")
+        input_field.send_keys(chaturbate_link)  # Usar chaturbate_link en lugar de link
 
-        # Encuentra y haz clic en el botón "Run"
-        run_button = WebDriverWait(driver, 15).until(
+        # Esperar y hacer clic en el botón "Run"
+        run_button = WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//button[span[text()="Run"]]'))
         )
         run_button.click()
-        logging.info("Botón 'Run' clickeado. Procesando...")
+        logging.info("Botón 'Run' clickeado, esperando a que se procesen los enlaces...")
 
-        # Espera a que aparezcan los enlaces m3u8
-        m3u8_links = WebDriverWait(driver, 30).until(
+        # Esperar a que los enlaces m3u8 se generen y estén disponibles
+        m3u8_links = WebDriverWait(driver, 20).until(
             EC.presence_of_all_elements_located((By.XPATH, '//pre/a'))
         )
 
+        # Obtener el último enlace m3u8 si existe
         if m3u8_links:
-            # Extrae el último enlace disponible
             last_m3u8_link = m3u8_links[-1].get_attribute('href')
-            logging.info(f"Enlace m3u8 extraído con éxito: {last_m3u8_link}")
+            logging.info(f"Enlace m3u8 extraído: {last_m3u8_link}")
             return last_m3u8_link
         else:
-            logging.warning("No se encontraron enlaces m3u8 en la página.")
+            logging.warning("No se encontraron enlaces m3u8.")
             return None
-
     except Exception as e:
-        logging.error(f"Error al extraer el enlace m3u8: {e}")
+        logging.error(f"Error al extraer el enlace: {e}")
         return None
+    finally:
+        # Asegura que el driver se cierre al finalizar, incluso si ocurre un error
+        driver.quit()
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
@@ -344,6 +344,12 @@ async def handle_file_upload(user_id, chat_id, file):
         if os.path.exists(file_path):
             os.remove(file_path)
 
+import os
+import tempfile
+import logging
+import asyncio
+from telethon.tl.types import DocumentAttributeVideo
+
 async def send_large_file(chat_id, file_path, bot):
     # Obtain the total duration of the video file
     command_ffprobe = [
@@ -453,7 +459,7 @@ async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id
     # Mensajes de inicio de descarga
     logging.info(f"Descarga iniciada con yt-dlp para {modelo}")
     await bot.send_message(chat_id, f"🔴 Iniciando grabación: {original_link}")
-    await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_link}")
+    await bot.send_message(chat_id, f"🎬 Enlace para grabar clips de {modelo}: {m3u8_url}")
 
     # Inicializar `process` en None para evitar problemas de referencia
     process = None
@@ -600,71 +606,69 @@ async def callback_alert(event):
     
 # Verificación periódica de enlaces m3u8 usando un solo driver
 async def verificar_enlaces():
-    while True:
+    driver = setup_driver()  # Inicializa el driver solo una vez al inicio
+
+    while driver is not None:
         links = load_links()
         if not links:
-            logging.warning("No hay enlaces guardados para verificar.")
+            logging.warning("No se cargaron enlaces guardados.")
             await asyncio.sleep(60)
             continue
 
-        # Inicializa el driver fuera del bucle si hay enlaces para procesar
-        driver = setup_driver()
-        if driver is None:
-            logging.error("No se pudo inicializar el driver. Reintentando en 60 segundos.")
-            await asyncio.sleep(60)
-            continue
+        tasks = []
+        processed_links = {}
+
+        for user_id_str, user_links in links.items():
+            try:
+                user_id = int(user_id_str)
+            except ValueError as e:
+                logging.error(f"Error de conversión para user_id_str '{user_id_str}': {e}")
+                continue
+
+            for link in user_links:
+                if link not in processed_links:
+                    # Crear una tarea para procesar el enlace usando el mismo driver
+                    task = asyncio.create_task(process_link(driver, user_id, link))
+                    tasks.append(task)
+                    processed_links[link] = task
 
         try:
-            for user_id_str, user_links in links.items():
-                user_id = int(user_id_str)
-                for link in user_links:
-                    try:
-                        logging.info(f"Procesando enlace: {link} para el usuario {user_id}")
-                        await process_link(driver, user_id, link)
-                    except Exception as e:
-                        logging.error(f"Error procesando el enlace {link}: {e}")
-        finally:
-            # Asegura cerrar el driver después de procesar todos los enlaces
-            driver.quit()
+            if tasks:
+                await asyncio.gather(*tasks)  # Ejecuta todas las tareas en paralelo
+        except Exception as e:
+            logging.error(f"Error en el ciclo de verificación: {e}")
+            driver.quit()  # Cierra el driver si ocurre un error crítico
+            driver = setup_driver()  # Reinstancia el driver en caso de error
+        else:
+            logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
 
-        await asyncio.sleep(60)  # Espera antes de la siguiente verificación
+        await asyncio.sleep(60)  # Espera antes de la próxima verificación
+
+    # Cerrar el driver al finalizar el ciclo o si `driver` es None
+    if driver:
+        driver.quit()
 
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
-    try:
-        logging.info(f"Iniciando extracción de enlace m3u8 para el enlace: {link}")
-        m3u8_link = await extract_last_m3u8_link(driver, link)
+    m3u8_link = await extract_last_m3u8_link(driver, link)
+    if m3u8_link:
+        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
 
-        if m3u8_link:
-            modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
-            logging.info(f"Enlace m3u8 extraído: {m3u8_link} para modelo: {modelo}")
-
-            # Verifica si ya hay una grabación activa
-            if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
-                logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
-                grabaciones[modelo]['chats'].add(user_id)
-                await alerta_emergente(modelo, 'online', user_id)
-            else:
-                logging.info(f"Iniciando nueva grabación para el modelo: {modelo}")
-                grabaciones[modelo] = {
-                    'inicio': time.time(),
-                    'file_path': None,
-                    'user_id': user_id,
-                    'm3u8_url': m3u8_link,
-                    'chats': {user_id}
-                }
-                await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
+        # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
+        if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
+            logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
+            grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
+            await alerta_emergente(modelo, 'online', user_id)
         else:
-            modelo = link.rstrip('/').split('/')[-1]
-            logging.warning(f"No se pudo obtener un enlace m3u8 válido para: {link}")
-
-            # Actualiza el estado a offline si estaba grabando
-            if modelo in grabaciones:
-                logging.info(f"{modelo} está offline. Eliminando de grabaciones activas.")
-                await alerta_emergente(modelo, 'offline', user_id)
-                grabaciones.pop(modelo, None)
-    except Exception as e:
-        logging.error(f"Error procesando el enlace {link}: {e}")
+            # Iniciar una nueva grabación y registrar en grabaciones activas
+            await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
+    else:
+        # Notificar estado offline si el enlace m3u8 no se pudo obtener
+        modelo = link.rstrip('/').split('/')[-1]
+        if modelo in grabaciones:
+            await alerta_emergente(modelo, 'offline', user_id)
+            grabaciones.pop(modelo, None)
+        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
@@ -830,85 +834,6 @@ async def process_and_upload_video(user_id, chat_id, file_path, modelo):
     os.remove(thumbnail_path)
     os.remove(file_path)
 
-
-def get_upload_server():
-    """
-    Obtiene el servidor de subida desde Doodstream.
-    """
-    url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") == 200 and "result" in data:
-            return data["result"]
-        else:
-            logging.error(f"Error al obtener el servidor de Doodstream: {data.get('msg')}")
-            return None
-    except requests.RequestException as e:
-        logging.error(f"Error al conectar con Doodstream: {e}")
-        return None
-
-def upload_to_doodstream(file_path):
-    """
-    Sube un archivo a Doodstream usando el servidor obtenido.
-    :param file_path: Ruta del archivo local a subir.
-    :return: URL del video en Doodstream o mensaje de error.
-    """
-    server = get_upload_server()
-    if not server:
-        return "❌ No se pudo obtener el servidor de Doodstream."
-
-    try:
-        # Realizar la subida
-        with open(file_path, "rb") as file:
-            files = {"file": file}
-            data = {"api_key": DOODSTREAM_API_KEY}
-            response = requests.post(server, files=files, data=data)
-            response.raise_for_status()
-
-            # Procesar la respuesta de la subida
-            upload_data = response.json()
-            if upload_data.get("status") == 200:
-                result = upload_data["result"][0]
-                return {
-                    "video_url": result.get("download_url"),
-                    "embed_url": result.get("protected_embed"),
-                    "thumbnail_url": result.get("splash_img")
-                }
-            else:
-                return f"❌ Error subiendo archivo: {upload_data.get('msg')}"
-    except requests.RequestException as e:
-        logging.error(f"Error durante la subida a Doodstream: {e}")
-        return f"❌ Error durante la subida: {e}"
-
-# Ejemplo de integración en el bot
-async def process_and_upload_to_doodstream(user_id, chat_id, file_path):
-    """
-    Procesa el archivo y lo sube a Doodstream, notificando al usuario.
-    """
-    await bot.send_message(chat_id, "⏳ Subiendo video a Doodstream...")
-
-    result = upload_to_doodstream(file_path)
-
-    if isinstance(result, dict):
-        # Enviar los enlaces al usuario
-        video_url = result.get("video_url")
-        embed_url = result.get("embed_url")
-        thumbnail_url = result.get("thumbnail_url")
-
-        message = (
-            f"✅ <b>Video Subido a Doodstream</b>\n\n"
-            f"🔗 <b>Descargar:</b> {video_url}\n"
-            f"🔗 <b>Ver Online:</b> {embed_url}\n"
-            f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
-        )
-        await bot.send_message(chat_id, message, parse_mode="html")
-    else:
-        # Notificar si hubo un error
-        await bot.send_message(chat_id, result)
-
 async def upload_to_gdrive(file_path, modelo):
     # Subir el archivo a Google Drive con rclone
     command = ["rclone", "copy", file_path, GDRIVE_PATH]
@@ -954,23 +879,13 @@ async def save_link(event):
     if not await is_bot_mentioned(event) and not event.text.startswith('/'):
         return
 
-    # Verificar y registrar información de depuración
-    logging.debug(f"ID del remitente: {event.sender_id}")
-    logging.debug(f"Usuarios autorizados: {AUTHORIZED_USERS}")
-
-    try:
-        # Verificar si el remitente está autorizado
-        if int(event.sender_id) not in AUTHORIZED_USERS:
-            logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
-            await event.respond("❗ No tienes permiso para guardar enlaces.")
-            return
-    except ValueError as e:
-        # Manejar cualquier error relacionado con el ID del remitente
-        logging.error(f"Error procesando el ID del remitente: {e}")
+    # Procesar solo si el usuario está autorizado
+    if event.sender_id not in AUTHORIZED_USERS:
+        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
 
-    # Ignorar comandos que comienzan con '/' pero no son relevantes
+    # Ignorar comandos que comienzan con '/' pero no son el comando actual
     if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
         return
     
@@ -984,16 +899,11 @@ async def save_link(event):
     
     # Guardar el enlace si es válido
     if is_valid_url(event.text):
-        try:
-            add_link(event.sender_id, event.text)
-            await event.respond("✅ Enlace guardado para grabación.")
-        except Exception as e:
-            logging.error(f"Error al guardar enlace: {e}")
-            await event.respond("❌ Error al guardar el enlace. Inténtalo nuevamente.")
+        add_link(event.sender_id, event.text)
+        await event.respond("✅ Enlace guardado para grabación.")
     else:
-        # Respuesta opcional para enlaces no válidos
-        logging.warning(f"Enlace inválido recibido: {event.text}")
-        await event.respond("❌ El enlace enviado no es válido.")
+        # No respondas nada si la URL es inválida
+        return
 
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
@@ -1056,7 +966,7 @@ async def process_clip_link(event):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
 
-        modelo = url.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo desde el enlace
+        modelo = url.split('/')[-1].split('.')[0]
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
 
@@ -1100,13 +1010,13 @@ async def admin_reset(event):
         await event.respond("❌ No tienes permiso para ejecutar este comando.")
         return
 
-    # Elimina solo los archivos .part y .mp4 en el directorio de descargas
+    # Elimina todos los archivos en el directorio de descargas
     try:
         for file in os.listdir(DOWNLOAD_PATH):
             file_path = os.path.join(DOWNLOAD_PATH, file)
-            if os.path.isfile(file_path) and (file.endswith('.part') or file.endswith('.mp4')):
+            if os.path.isfile(file_path):
                 os.remove(file_path)
-        await event.respond("✅ Se han eliminado todos los archivos .part y .mp4 en el servidor.")
+        await event.respond("✅ Todos los archivos en el servidor han sido eliminados.")
     except Exception as e:
         await event.respond(f"❌ Error eliminando archivos: {e}")
         return
@@ -1185,10 +1095,6 @@ async def handle_link(chat_id, user_id, link):
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_argument("--disable-software-rasterizer")
-    chrome_options.add_argument("--disable-gpu")  # Puede mejorar la estabilidad en headless
-    chrome_options.add_argument("--window-size=1920,1080")  # Evita problemas de tamaño en headless
 
     driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
 
