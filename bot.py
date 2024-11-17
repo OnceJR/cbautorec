@@ -881,13 +881,23 @@ async def save_link(event):
     if not await is_bot_mentioned(event) and not event.text.startswith('/'):
         return
 
-    # Procesar solo si el usuario está autorizado
-    if event.sender_id not in AUTHORIZED_USERS:
-        logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
+    # Verificar y registrar información de depuración
+    logging.debug(f"ID del remitente: {event.sender_id}")
+    logging.debug(f"Usuarios autorizados: {AUTHORIZED_USERS}")
+
+    try:
+        # Verificar si el remitente está autorizado
+        if int(event.sender_id) not in AUTHORIZED_USERS:
+            logging.warning(f"Intento de guardar enlace no autorizado por el usuario: {event.sender_id}")
+            await event.respond("❗ No tienes permiso para guardar enlaces.")
+            return
+    except ValueError as e:
+        # Manejar cualquier error relacionado con el ID del remitente
+        logging.error(f"Error procesando el ID del remitente: {e}")
         await event.respond("❗ No tienes permiso para guardar enlaces.")
         return
 
-    # Ignorar comandos que comienzan con '/' pero no son el comando actual
+    # Ignorar comandos que comienzan con '/' pero no son relevantes
     if event.text.startswith('/') and event.text.split()[0] not in ['/grabar', '/start', '/mis_enlaces', '/eliminar_enlace', '/status']:
         return
     
@@ -901,11 +911,16 @@ async def save_link(event):
     
     # Guardar el enlace si es válido
     if is_valid_url(event.text):
-        add_link(event.sender_id, event.text)
-        await event.respond("✅ Enlace guardado para grabación.")
+        try:
+            add_link(event.sender_id, event.text)
+            await event.respond("✅ Enlace guardado para grabación.")
+        except Exception as e:
+            logging.error(f"Error al guardar enlace: {e}")
+            await event.respond("❌ Error al guardar el enlace. Inténtalo nuevamente.")
     else:
-        # No respondas nada si la URL es inválida
-        return
+        # Respuesta opcional para enlaces no válidos
+        logging.warning(f"Enlace inválido recibido: {event.text}")
+        await event.respond("❌ El enlace enviado no es válido.")
 
 # Comando para mostrar enlaces guardados
 @bot.on(events.NewMessage(pattern='/mis_enlaces'))
