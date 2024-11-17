@@ -1057,7 +1057,7 @@ async def process_clip_link(event):
             await event.reply("❌ Por favor, envía un enlace válido.")
             return
 
-        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo desde el enlace
+        modelo = url.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo desde el enlace
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
 
