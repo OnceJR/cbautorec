@@ -384,7 +384,7 @@ async def handle_file_upload(user_id, chat_id, file):
             logging.info(f"Subida exitosa: {file}")
 
             # Crear enlace compartido
-            share_command = ["rclone", "link", GDRIVE_PATH + file]
+            share_command = ["rclone", "link", os.path.join(GDRIVE_PATH, file)]
             share_process = await asyncio.create_subprocess_exec(
                 *share_command,
                 stdout=asyncio.subprocess.PIPE,
@@ -847,25 +847,42 @@ async def verificar_enlaces():
 
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
-    m3u8_link = await extract_last_m3u8_link(driver, link)
-    if m3u8_link:
-        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
+    try:
+        logging.info(f"Extrayendo enlace m3u8 para: {link}")
+        m3u8_link = await extract_last_m3u8_link(driver, link)
 
-        # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
-        if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
-            logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
-            grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
-            await alerta_emergente(modelo, 'online', user_id)
+        if m3u8_link:
+            modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
+            logging.info(f"Enlace m3u8 extraído: {m3u8_link} para modelo: {modelo}")
+
+            # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
+            if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
+                logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
+                grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
+                await alerta_emergente(modelo, 'online', user_id)
+            else:
+                # Notificar al canal sobre el inicio de una nueva grabación
+                logging.info(f"Iniciando nueva grabación para {modelo}")
+                await notify_recording_start(modelo, link, user_id)  # Notificar inicio de grabación
+                await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
+
+                # Registrar la grabación activa
+                grabaciones[modelo] = {
+                    'm3u8_url': m3u8_link,
+                    'chats': {user_id},
+                    'start_time': time.time(),
+                }
         else:
-            # Iniciar una nueva grabación y registrar en grabaciones activas
-            await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
-    else:
-        # Notificar estado offline si el enlace m3u8 no se pudo obtener
-        modelo = link.rstrip('/').split('/')[-1]
-        if modelo in grabaciones:
-            await alerta_emergente(modelo, 'offline', user_id)
-            grabaciones.pop(modelo, None)
-        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+            # No se pudo extraer el enlace m3u8; notificar estado offline
+            modelo = link.rstrip('/').split('/')[-1]
+            logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
+            if modelo in grabaciones:
+                logging.info(f"{modelo} está offline. Eliminando de grabaciones activas.")
+                await alerta_emergente(modelo, 'offline', user_id)
+                grabaciones.pop(modelo, None)
+
+    except Exception as e:
+        logging.error(f"Error procesando el enlace {link}: {e}")
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
@@ -1058,16 +1075,31 @@ async def upload_to_gdrive(file_path, modelo):
 # Comando de inicio de monitoreo y grabación
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
-        await event.respond(
-            "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
-            "Por favor, envía la URL de la transmisión para comenzar.",
-            parse_mode='html'
-        )
-        is_recording[event.sender_id] = True
-        
-    else:
-        await event.respond("❗ No tienes permiso para usar este comando.")
+    user_id = event.sender_id
+    chat_id = event.chat_id
+    link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
+
+    # Verificar si el enlace es válido
+    if not link or not is_valid_url(link):
+        await event.respond("❌ Por favor, envía un enlace válido para grabar.")
+        return
+
+    modelo = link.rstrip('/').split('/')[-1]  # Extraer el modelo desde el enlace
+
+    try:
+        # Notificar al canal de logs sobre el inicio de la grabación
+        await notify_recording_start(modelo, link, user_id)
+
+        # Procesar el enlace para iniciar grabación
+        driver = setup_driver()  # Configurar el driver de Selenium
+        if driver:
+            await process_link(driver, user_id, link)
+            driver.quit()
+        else:
+            await event.respond("❌ Error al configurar el controlador para grabar.")
+    except Exception as e:
+        logging.error(f"Error al iniciar la grabación para {modelo}: {e}")
+        await event.respond("❌ Hubo un problema al intentar iniciar la grabación.")
 
 # Comando para guardar enlaces
 @bot.on(events.NewMessage)
