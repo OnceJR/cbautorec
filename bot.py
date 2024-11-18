@@ -233,40 +233,135 @@ async def notify_recording_start(modelo, link, user_id):
 
 async def upload_and_notify(user_id, chat_id, file_path):
     """
-    Función para cargar un archivo a Doodstream y notificar en Telegram.
-    Esto se ejecuta en paralelo sin bloquear la verificación de enlaces.
+    Función para cargar un archivo a Doodstream y Google Drive con progreso dinámico.
     """
     try:
-        # Subir a Doodstream
-        await bot.send_message(chat_id, "⏳ Subiendo a Doodstream...")
-        result = upload_to_doodstream(file_path)
+        # Subir a Doodstream con progreso
+        await upload_to_doodstream_with_progress(chat_id, file_path)
 
-        if isinstance(result, str):
-            # Si hubo un error, enviar mensaje de error
-            await bot.send_message(chat_id, result)
-        else:
-            # Si la subida fue exitosa, enviar los enlaces
-            video_url = result["video_url"]
-            embed_url = result["embed_url"]
-            thumbnail_url = result["thumbnail_url"]
-            message = (
-                f"✅ <b>Video Subido a Doodstream</b>\n\n"
-                f"🔗 <b>Descargar:</b> {video_url}\n"
-                f"🔗 <b>Ver Online:</b> {embed_url}\n"
-                f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
-            )
-            await bot.send_message(chat_id, message, parse_mode="html")
-
-        # Opcional: subir a Google Drive después de Doodstream
-        await bot.send_message(chat_id, "⏳ Subiendo a Google Drive...")
-        await handle_file_upload(user_id, chat_id, file_path)
+        # Subir a Google Drive con progreso
+        await upload_to_gdrive_with_progress(chat_id, file_path)
 
     except Exception as e:
-        logging.error(f"Error al subir a Doodstream: {e}")
-        await bot.send_message(chat_id, f"❌ Error al subir a Doodstream: {e}")
+        logging.error(f"Error durante la subida: {e}")
+        await bot.send_message(chat_id, f"❌ Error durante la subida: {e}")
 
-    # Opcional: enviar mensaje adicional de confirmación si necesitas
-    logging.info(f"Subida y notificación completadas para {file_path}")
+async def upload_to_doodstream_with_progress(chat_id, file_path):
+    """
+    Función para subir un archivo a Doodstream con progreso dinámico en Telegram.
+    """
+    message = await bot.send_message(chat_id, "⏳ Subiendo a Doodstream... 0% completado")
+    try:
+        # Obtener el servidor de subida
+        server = get_upload_server()
+        if not server:
+            await message.edit("❌ No se pudo obtener el servidor de Doodstream.")
+            return
+
+        # Subir archivo con progreso
+        with open(file_path, "rb") as file:
+            total_size = os.path.getsize(file_path)
+            uploaded = 0
+
+            def update_progress(monitor):
+                nonlocal uploaded
+                uploaded = monitor.bytes_read
+                progress = (uploaded / total_size) * 100
+                asyncio.run_coroutine_threadsafe(
+                    message.edit(f"⏳ Subiendo a Doodstream... {progress:.2f}% completado"),
+                    bot.loop
+                )
+
+            # Configurar el monitor de progreso
+            from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
+            encoder = MultipartEncoder(
+                fields={"file": (os.path.basename(file_path), file), "api_key": DOODSTREAM_API_KEY}
+            )
+            monitor = MultipartEncoderMonitor(encoder, update_progress)
+
+            # Subir archivo con progreso
+            headers = {"Content-Type": monitor.content_type}
+            response = requests.post(server, data=monitor, headers=headers)
+
+            # Procesar la respuesta
+            if response.status_code == 200:
+                result = response.json()
+                if result.get("status") == 200:
+                    video_url = result["result"][0]["download_url"]
+                    embed_url = result["result"][0]["protected_embed"]
+                    thumbnail_url = result["result"][0]["splash_img"]
+                    await message.edit(
+                        f"✅ <b>Video Subido a Doodstream</b>\n\n"
+                        f"🔗 <b>Descargar:</b> {video_url}\n"
+                        f"🔗 <b>Ver Online:</b> {embed_url}\n"
+                        f"🖼️ <b>Miniatura:</b> {thumbnail_url}",
+                        parse_mode="html"
+                    )
+                else:
+                    await message.edit(f"❌ Error al subir a Doodstream: {result.get('msg')}")
+            else:
+                await message.edit(f"❌ Error en la conexión con Doodstream. Código: {response.status_code}")
+    except Exception as e:
+        logging.error(f"Error durante la subida a Doodstream: {e}")
+        await message.edit(f"❌ Error durante la subida a Doodstream: {e}")
+
+async def upload_to_gdrive_with_progress(chat_id, file_path):
+    """
+    Función para subir un archivo a Google Drive con progreso dinámico en Telegram.
+    """
+    message = await bot.send_message(chat_id, "⏳ Subiendo a Google Drive... 0% completado")
+    try:
+        total_size = os.path.getsize(file_path)
+        uploaded = 0
+
+        def update_progress(line):
+            nonlocal uploaded
+            if "Transferred:" in line:
+                parts = line.split()
+                uploaded = int(parts[1].replace("k", "").replace("M", "").replace("G", "")) * 1024 * 1024  # Convertir a bytes
+                progress = (uploaded / total_size) * 100
+                asyncio.run_coroutine_threadsafe(
+                    message.edit(f"⏳ Subiendo a Google Drive... {progress:.2f}% completado"),
+                    bot.loop
+                )
+
+        # Comando rclone para subir
+        command = ["rclone", "copy", file_path, GDRIVE_PATH, "-P"]
+
+        # Ejecutar el comando y capturar la salida para el progreso
+        process = await asyncio.create_subprocess_exec(
+            *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+        )
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                break
+            line = line.decode().strip()
+            update_progress(line)
+
+        # Esperar a que termine el proceso
+        await process.wait()
+
+        # Comprobar el estado final
+        if process.returncode == 0:
+            # Crear enlace compartido
+            share_command = ["rclone", "link", GDRIVE_PATH + os.path.basename(file_path)]
+            share_process = await asyncio.create_subprocess_exec(
+                *share_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            share_stdout, _ = await share_process.communicate()
+            shared_link = share_stdout.decode().strip()
+
+            await message.edit(
+                f"✅ <b>Video Subido a Google Drive</b>\n\n"
+                f"🔗 <b>Enlace:</b> {shared_link}",
+                parse_mode="html"
+            )
+        else:
+            await message.edit("❌ Error durante la subida a Google Drive.")
+    except Exception as e:
+        logging.error(f"Error durante la subida a Google Drive: {e}")
+        await message.edit(f"❌ Error durante la subida a Google Drive: {e}")
 
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
