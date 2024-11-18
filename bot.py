@@ -18,10 +18,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
-# Configuración de la API
-API_ID = 24738183
-API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
-BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+API_ID = config['API_ID']
+API_HASH = config['API_HASH']
+BOT_TOKEN = config['BOT_TOKEN']
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -343,12 +345,6 @@ async def handle_file_upload(user_id, chat_id, file):
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
         if os.path.exists(file_path):
             os.remove(file_path)
-
-import os
-import tempfile
-import logging
-import asyncio
-from telethon.tl.types import DocumentAttributeVideo
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtain the total duration of the video file
