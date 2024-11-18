@@ -53,6 +53,7 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
+DOODSTREAM_API_KEY = "470375e32zzcqzbz5sf7ba"
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -232,11 +233,37 @@ async def notify_recording_start(modelo, link, user_id):
 
 async def upload_and_notify(user_id, chat_id, file_path):
     """
-    Función para cargar un archivo a Google Drive y notificar en Telegram.
+    Función para cargar un archivo a Doodstream y notificar en Telegram.
     Esto se ejecuta en paralelo sin bloquear la verificación de enlaces.
     """
-    # Llamada a la función de manejo de subida que ya tienes configurada
-    await handle_file_upload(user_id, chat_id, file_path)
+    try:
+        # Subir a Doodstream
+        await bot.send_message(chat_id, "⏳ Subiendo a Doodstream...")
+        result = upload_to_doodstream(file_path)
+
+        if isinstance(result, str):
+            # Si hubo un error, enviar mensaje de error
+            await bot.send_message(chat_id, result)
+        else:
+            # Si la subida fue exitosa, enviar los enlaces
+            video_url = result["video_url"]
+            embed_url = result["embed_url"]
+            thumbnail_url = result["thumbnail_url"]
+            message = (
+                f"✅ <b>Video Subido a Doodstream</b>\n\n"
+                f"🔗 <b>Descargar:</b> {video_url}\n"
+                f"🔗 <b>Ver Online:</b> {embed_url}\n"
+                f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
+            )
+            await bot.send_message(chat_id, message, parse_mode="html")
+
+        # Opcional: subir a Google Drive después de Doodstream
+        await bot.send_message(chat_id, "⏳ Subiendo a Google Drive...")
+        await handle_file_upload(user_id, chat_id, file_path)
+
+    except Exception as e:
+        logging.error(f"Error al subir a Doodstream: {e}")
+        await bot.send_message(chat_id, f"❌ Error al subir a Doodstream: {e}")
 
     # Opcional: enviar mensaje adicional de confirmación si necesitas
     logging.info(f"Subida y notificación completadas para {file_path}")
@@ -446,6 +473,85 @@ async def send_large_file(chat_id, file_path, bot):
             logging.error(f"Error durante la división y envío de archivo: {e}")
             await bot.send_message(chat_id, f"❌ Error al dividir/enviar el archivo: {e}")
             break
+
+def get_upload_server():
+    """
+    Obtiene el servidor de subida desde Doodstream.
+    """
+    url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+
+        if data.get("status") == 200 and "result" in data:
+            logging.info("Servidor de subida obtenido correctamente.")
+            return data["result"]
+        else:
+            logging.error(f"Error al obtener el servidor de Doodstream: {data.get('msg')}")
+            return None
+    except requests.RequestException as e:
+        logging.error(f"Error al conectar con Doodstream: {e}")
+        return None
+
+def upload_to_doodstream(file_path):
+    """
+    Sube un archivo a Doodstream usando el servidor obtenido.
+    :param file_path: Ruta del archivo local a subir.
+    :return: URL del video en Doodstream o mensaje de error.
+    """
+    server = get_upload_server()
+    if not server:
+        return "❌ No se pudo obtener el servidor de Doodstream."
+
+    try:
+        # Realizar la subida
+        with open(file_path, "rb") as file:
+            files = {"file": file}
+            data = {"api_key": DOODSTREAM_API_KEY}
+            response = requests.post(server, files=files, data=data)
+            response.raise_for_status()
+
+            # Procesar la respuesta de la subida
+            upload_data = response.json()
+            if upload_data.get("status") == 200:
+                result = upload_data["result"][0]
+                return {
+                    "video_url": result.get("download_url"),
+                    "embed_url": result.get("protected_embed"),
+                    "thumbnail_url": result.get("splash_img")
+                }
+            else:
+                return f"❌ Error subiendo archivo: {upload_data.get('msg')}"
+    except requests.RequestException as e:
+        logging.error(f"Error durante la subida a Doodstream: {e}")
+        return f"❌ Error durante la subida: {e}"
+
+# Ejemplo de uso
+def process_and_upload_to_doodstream(file_path):
+    """
+    Procesa el archivo y lo sube a Doodstream, notificando sobre el resultado.
+    """
+    logging.info(f"Subiendo archivo {file_path} a Doodstream...")
+    result = upload_to_doodstream(file_path)
+
+    if isinstance(result, dict):
+        # Enlaces de Doodstream
+        video_url = result.get("video_url")
+        embed_url = result.get("embed_url")
+        thumbnail_url = result.get("thumbnail_url")
+
+        message = (
+            f"✅ <b>Video Subido a Doodstream</b>\n\n"
+            f"🔗 <b>Descargar:</b> {video_url}\n"
+            f"🔗 <b>Ver Online:</b> {embed_url}\n"
+            f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
+        )
+        logging.info(f"Subida exitosa: {message}")
+        return message
+    else:
+        logging.error(f"Error en la subida a Doodstream: {result}")
+        return result
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
