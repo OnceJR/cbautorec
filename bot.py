@@ -18,12 +18,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
-with open('config.json', 'r') as f:
-    config = json.load(f)
-
-API_ID = config['API_ID']
-API_HASH = config['API_HASH']
-BOT_TOKEN = config['BOT_TOKEN']
+# Configuración de la API
+API_ID = 24738183
+API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
+BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
 
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
@@ -53,7 +51,6 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
-DOODSTREAM_API_KEY = "470375e32zzcqzbz5sf7ba"
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -233,135 +230,14 @@ async def notify_recording_start(modelo, link, user_id):
 
 async def upload_and_notify(user_id, chat_id, file_path):
     """
-    Función para cargar un archivo a Doodstream y Google Drive con progreso dinámico.
+    Función para cargar un archivo a Google Drive y notificar en Telegram.
+    Esto se ejecuta en paralelo sin bloquear la verificación de enlaces.
     """
-    try:
-        # Subir a Doodstream con progreso
-        await upload_to_doodstream_with_progress(chat_id, file_path)
+    # Llamada a la función de manejo de subida que ya tienes configurada
+    await handle_file_upload(user_id, chat_id, file_path)
 
-        # Subir a Google Drive con progreso
-        await upload_to_gdrive_with_progress(chat_id, file_path)
-
-    except Exception as e:
-        logging.error(f"Error durante la subida: {e}")
-        await bot.send_message(chat_id, f"❌ Error durante la subida: {e}")
-
-async def upload_to_doodstream_with_progress(chat_id, file_path):
-    """
-    Función para subir un archivo a Doodstream con progreso dinámico en Telegram.
-    """
-    message = await bot.send_message(chat_id, "⏳ Subiendo a Doodstream... 0% completado")
-    try:
-        # Obtener el servidor de subida
-        server = get_upload_server()
-        if not server:
-            await message.edit("❌ No se pudo obtener el servidor de Doodstream.")
-            return
-
-        # Subir archivo con progreso
-        with open(file_path, "rb") as file:
-            total_size = os.path.getsize(file_path)
-            uploaded = 0
-
-            def update_progress(monitor):
-                nonlocal uploaded
-                uploaded = monitor.bytes_read
-                progress = (uploaded / total_size) * 100
-                asyncio.run_coroutine_threadsafe(
-                    message.edit(f"⏳ Subiendo a Doodstream... {progress:.2f}% completado"),
-                    bot.loop
-                )
-
-            # Configurar el monitor de progreso
-            from requests_toolbelt import MultipartEncoder, MultipartEncoderMonitor
-            encoder = MultipartEncoder(
-                fields={"file": (os.path.basename(file_path), file), "api_key": DOODSTREAM_API_KEY}
-            )
-            monitor = MultipartEncoderMonitor(encoder, update_progress)
-
-            # Subir archivo con progreso
-            headers = {"Content-Type": monitor.content_type}
-            response = requests.post(server, data=monitor, headers=headers)
-
-            # Procesar la respuesta
-            if response.status_code == 200:
-                result = response.json()
-                if result.get("status") == 200:
-                    video_url = result["result"][0]["download_url"]
-                    embed_url = result["result"][0]["protected_embed"]
-                    thumbnail_url = result["result"][0]["splash_img"]
-                    await message.edit(
-                        f"✅ <b>Video Subido a Doodstream</b>\n\n"
-                        f"🔗 <b>Descargar:</b> {video_url}\n"
-                        f"🔗 <b>Ver Online:</b> {embed_url}\n"
-                        f"🖼️ <b>Miniatura:</b> {thumbnail_url}",
-                        parse_mode="html"
-                    )
-                else:
-                    await message.edit(f"❌ Error al subir a Doodstream: {result.get('msg')}")
-            else:
-                await message.edit(f"❌ Error en la conexión con Doodstream. Código: {response.status_code}")
-    except Exception as e:
-        logging.error(f"Error durante la subida a Doodstream: {e}")
-        await message.edit(f"❌ Error durante la subida a Doodstream: {e}")
-
-async def upload_to_gdrive_with_progress(chat_id, file_path):
-    """
-    Función para subir un archivo a Google Drive con progreso dinámico en Telegram.
-    """
-    message = await bot.send_message(chat_id, "⏳ Subiendo a Google Drive... 0% completado")
-    try:
-        total_size = os.path.getsize(file_path)
-        uploaded = 0
-
-        def update_progress(line):
-            nonlocal uploaded
-            if "Transferred:" in line:
-                parts = line.split()
-                uploaded = int(parts[1].replace("k", "").replace("M", "").replace("G", "")) * 1024 * 1024  # Convertir a bytes
-                progress = (uploaded / total_size) * 100
-                asyncio.run_coroutine_threadsafe(
-                    message.edit(f"⏳ Subiendo a Google Drive... {progress:.2f}% completado"),
-                    bot.loop
-                )
-
-        # Comando rclone para subir
-        command = ["rclone", "copy", file_path, GDRIVE_PATH, "-P"]
-
-        # Ejecutar el comando y capturar la salida para el progreso
-        process = await asyncio.create_subprocess_exec(
-            *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        while True:
-            line = await process.stdout.readline()
-            if not line:
-                break
-            line = line.decode().strip()
-            update_progress(line)
-
-        # Esperar a que termine el proceso
-        await process.wait()
-
-        # Comprobar el estado final
-        if process.returncode == 0:
-            # Crear enlace compartido
-            share_command = ["rclone", "link", GDRIVE_PATH + os.path.basename(file_path)]
-            share_process = await asyncio.create_subprocess_exec(
-                *share_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-            )
-            share_stdout, _ = await share_process.communicate()
-            shared_link = share_stdout.decode().strip()
-
-            await message.edit(
-                f"✅ <b>Video Subido a Google Drive</b>\n\n"
-                f"🔗 <b>Enlace:</b> {shared_link}",
-                parse_mode="html"
-            )
-        else:
-            await message.edit("❌ Error durante la subida a Google Drive.")
-    except Exception as e:
-        logging.error(f"Error durante la subida a Google Drive: {e}")
-        await message.edit(f"❌ Error durante la subida a Google Drive: {e}")
+    # Opcional: enviar mensaje adicional de confirmación si necesitas
+    logging.info(f"Subida y notificación completadas para {file_path}")
 
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
@@ -384,7 +260,7 @@ async def handle_file_upload(user_id, chat_id, file):
             logging.info(f"Subida exitosa: {file}")
 
             # Crear enlace compartido
-            share_command = ["rclone", "link", os.path.join(GDRIVE_PATH, file)]
+            share_command = ["rclone", "link", GDRIVE_PATH + file]
             share_process = await asyncio.create_subprocess_exec(
                 *share_command,
                 stdout=asyncio.subprocess.PIPE,
@@ -467,6 +343,12 @@ async def handle_file_upload(user_id, chat_id, file):
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
         if os.path.exists(file_path):
             os.remove(file_path)
+
+import os
+import tempfile
+import logging
+import asyncio
+from telethon.tl.types import DocumentAttributeVideo
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtain the total duration of the video file
@@ -568,85 +450,6 @@ async def send_large_file(chat_id, file_path, bot):
             logging.error(f"Error durante la división y envío de archivo: {e}")
             await bot.send_message(chat_id, f"❌ Error al dividir/enviar el archivo: {e}")
             break
-
-def get_upload_server():
-    """
-    Obtiene el servidor de subida desde Doodstream.
-    """
-    url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
-    try:
-        response = requests.get(url)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") == 200 and "result" in data:
-            logging.info("Servidor de subida obtenido correctamente.")
-            return data["result"]
-        else:
-            logging.error(f"Error al obtener el servidor de Doodstream: {data.get('msg')}")
-            return None
-    except requests.RequestException as e:
-        logging.error(f"Error al conectar con Doodstream: {e}")
-        return None
-
-def upload_to_doodstream(file_path):
-    """
-    Sube un archivo a Doodstream usando el servidor obtenido.
-    :param file_path: Ruta del archivo local a subir.
-    :return: URL del video en Doodstream o mensaje de error.
-    """
-    server = get_upload_server()
-    if not server:
-        return "❌ No se pudo obtener el servidor de Doodstream."
-
-    try:
-        # Realizar la subida
-        with open(file_path, "rb") as file:
-            files = {"file": file}
-            data = {"api_key": DOODSTREAM_API_KEY}
-            response = requests.post(server, files=files, data=data)
-            response.raise_for_status()
-
-            # Procesar la respuesta de la subida
-            upload_data = response.json()
-            if upload_data.get("status") == 200:
-                result = upload_data["result"][0]
-                return {
-                    "video_url": result.get("download_url"),
-                    "embed_url": result.get("protected_embed"),
-                    "thumbnail_url": result.get("splash_img")
-                }
-            else:
-                return f"❌ Error subiendo archivo: {upload_data.get('msg')}"
-    except requests.RequestException as e:
-        logging.error(f"Error durante la subida a Doodstream: {e}")
-        return f"❌ Error durante la subida: {e}"
-
-# Ejemplo de uso
-def process_and_upload_to_doodstream(file_path):
-    """
-    Procesa el archivo y lo sube a Doodstream, notificando sobre el resultado.
-    """
-    logging.info(f"Subiendo archivo {file_path} a Doodstream...")
-    result = upload_to_doodstream(file_path)
-
-    if isinstance(result, dict):
-        # Enlaces de Doodstream
-        video_url = result.get("video_url")
-        embed_url = result.get("embed_url")
-        thumbnail_url = result.get("thumbnail_url")
-
-        message = (
-            f"✅ <b>Video Subido a Doodstream</b>\n\n"
-            f"🔗 <b>Descargar:</b> {video_url}\n"
-            f"🔗 <b>Ver Online:</b> {embed_url}\n"
-            f"🖼️ <b>Miniatura:</b> {thumbnail_url}"
-        )
-        logging.info(f"Subida exitosa: {message}")
-        return message
-    else:
-        logging.error(f"Error en la subida a Doodstream: {result}")
-        return result
 
 async def download_with_yt_dlp(m3u8_url, user_id, modelo, original_link, chat_id):
     fecha_hora = time.strftime("%Y%m%d_%H%M%S")
@@ -847,42 +650,25 @@ async def verificar_enlaces():
 
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
-    try:
-        logging.info(f"Extrayendo enlace m3u8 para: {link}")
-        m3u8_link = await extract_last_m3u8_link(driver, link)
+    m3u8_link = await extract_last_m3u8_link(driver, link)
+    if m3u8_link:
+        modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
 
-        if m3u8_link:
-            modelo = link.rstrip('/').split('/')[-1]  # Extrae el nombre del modelo
-            logging.info(f"Enlace m3u8 extraído: {m3u8_link} para modelo: {modelo}")
-
-            # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
-            if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
-                logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
-                grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
-                await alerta_emergente(modelo, 'online', user_id)
-            else:
-                # Notificar al canal sobre el inicio de una nueva grabación
-                logging.info(f"Iniciando nueva grabación para {modelo}")
-                await notify_recording_start(modelo, link, user_id)  # Notificar inicio de grabación
-                await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
-
-                # Registrar la grabación activa
-                grabaciones[modelo] = {
-                    'm3u8_url': m3u8_link,
-                    'chats': {user_id},
-                    'start_time': time.time(),
-                }
+        # Verificar si ya hay una grabación activa para este modelo y enlace m3u8
+        if modelo in grabaciones and grabaciones[modelo].get('m3u8_url') == m3u8_link:
+            logging.info(f"Grabación ya activa para {modelo}. Compartiendo progreso.")
+            grabaciones[modelo]['chats'].add(user_id)  # Agregar chat para compartir progreso
+            await alerta_emergente(modelo, 'online', user_id)
         else:
-            # No se pudo extraer el enlace m3u8; notificar estado offline
-            modelo = link.rstrip('/').split('/')[-1]
-            logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
-            if modelo in grabaciones:
-                logging.info(f"{modelo} está offline. Eliminando de grabaciones activas.")
-                await alerta_emergente(modelo, 'offline', user_id)
-                grabaciones.pop(modelo, None)
-
-    except Exception as e:
-        logging.error(f"Error procesando el enlace {link}: {e}")
+            # Iniciar una nueva grabación y registrar en grabaciones activas
+            await download_with_yt_dlp(m3u8_link, user_id, modelo, link, user_id)
+    else:
+        # Notificar estado offline si el enlace m3u8 no se pudo obtener
+        modelo = link.rstrip('/').split('/')[-1]
+        if modelo in grabaciones:
+            await alerta_emergente(modelo, 'offline', user_id)
+            grabaciones.pop(modelo, None)
+        logging.warning(f"No se pudo obtener un enlace m3u8 válido para el enlace: {link}")
 
 # Función para enviar alertas emergentes
 async def alerta_emergente(modelo, estado, user_id):
@@ -1075,31 +861,16 @@ async def upload_to_gdrive(file_path, modelo):
 # Comando de inicio de monitoreo y grabación
 @bot.on(events.NewMessage(pattern='/grabar'))
 async def handle_grabar(event):
-    user_id = event.sender_id
-    chat_id = event.chat_id
-    link = event.text.split(maxsplit=1)[1] if len(event.text.split()) > 1 else None
-
-    # Verificar si el enlace es válido
-    if not link or not is_valid_url(link):
-        await event.respond("❌ Por favor, envía un enlace válido para grabar.")
-        return
-
-    modelo = link.rstrip('/').split('/')[-1]  # Extraer el modelo desde el enlace
-
-    try:
-        # Notificar al canal de logs sobre el inicio de la grabación
-        await notify_recording_start(modelo, link, user_id)
-
-        # Procesar el enlace para iniciar grabación
-        driver = setup_driver()  # Configurar el driver de Selenium
-        if driver:
-            await process_link(driver, user_id, link)
-            driver.quit()
-        else:
-            await event.respond("❌ Error al configurar el controlador para grabar.")
-    except Exception as e:
-        logging.error(f"Error al iniciar la grabación para {modelo}: {e}")
-        await event.respond("❌ Hubo un problema al intentar iniciar la grabación.")
+    if await is_bot_mentioned(event) and event.sender_id in AUTHORIZED_USERS:
+        await event.respond(
+            "🔴 <b>Inicia monitoreo y grabación automática de una transmisión</b> 🔴\n\n"
+            "Por favor, envía la URL de la transmisión para comenzar.",
+            parse_mode='html'
+        )
+        is_recording[event.sender_id] = True
+        
+    else:
+        await event.respond("❗ No tienes permiso para usar este comando.")
 
 # Comando para guardar enlaces
 @bot.on(events.NewMessage)
