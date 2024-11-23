@@ -991,13 +991,13 @@ async def process_clip_link(event):
 
         # Validar si es un enlace válido
         if not is_valid_url(url):
-            logging.warning(f"Enlace inválido ignorado: {url}")
-            del pending_clips[event.sender_id]  # Eliminar el estado de clip pendiente
+            await event.reply("❌ Por favor, envía un enlace válido.")
+            del pending_clips[event.sender_id]
             return
 
         # Extraer el nombre del modelo del enlace
         try:
-            modelo = url.split('amlst:')[1].split('-')[0]  # Extraer lo que está después de 'amlst:' y antes de '-'
+            modelo = url.split('/')[-1].split('-')[0]
         except IndexError:
             modelo = "Modelo_Desconocido"
 
@@ -1012,9 +1012,6 @@ async def process_clip_link(event):
             "-c:a", "aac", "-b:a", "128k", filename
         ]
 
-        # Registrar el comando que se ejecutará
-        logging.info(f"Ejecutando comando FFmpeg: {' '.join(record_command)}")
-
         # Ejecutar la grabación
         process = await asyncio.create_subprocess_exec(
             *record_command,
@@ -1022,43 +1019,19 @@ async def process_clip_link(event):
             stderr=asyncio.subprocess.PIPE
         )
 
-        # Capturar salida y errores de FFmpeg
-        stdout, stderr = await process.communicate()
+        # Actualizar mensaje de progreso cada 5 segundos
+        for i in range(5, 31, 5):
+            await asyncio.sleep(5)
+            await progress_message.edit(f"⏳ Grabando clip... {i} segundos")
 
+        # Capturar errores de FFmpeg
+        stdout, stderr = await process.communicate()
         if process.returncode != 0:
             error_msg = stderr.decode()
             logging.error(f"Error en FFmpeg: {error_msg}")
-            await progress_message.edit(f"❌ Error durante la grabación: {error_msg}")
+            await progress_message.edit("❌ Error durante la grabación del clip.")
             del pending_clips[event.sender_id]
             return
-
-        # Ruta para la miniatura temporal
-        thumbnail_path = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_thumb.jpg"
-
-        try:
-            # Generar previews cada 5 segundos
-            for i in range(5, 31, 5):  # Actualizar cada 5 segundos
-                await asyncio.sleep(5)
-
-                # Capturar un frame como miniatura a los `i` segundos
-                thumbnail_command = [
-                    "ffmpeg", "-y", "-i", url, "-ss", str(i), "-vframes", "1",
-                    "-q:v", "2", thumbnail_path
-                ]
-                thumbnail_process = await asyncio.create_subprocess_exec(*thumbnail_command)
-                await thumbnail_process.wait()
-
-                if os.path.exists(thumbnail_path):
-                    # Actualizar el mensaje con la miniatura
-                    await progress_message.edit(
-                        f"⏳ Grabando clip... {i} segundos",
-                        file=thumbnail_path
-                    )
-                    os.remove(thumbnail_path)  # Eliminar la miniatura después de usarla
-
-        except Exception as e:
-            logging.error(f"Error durante la generación de previews: {e}")
-            await progress_message.edit("⚠️ Error al actualizar el progreso con previews.")
 
         # Preparar información adicional
         perfil_url = f"https://chaturbate.com/{modelo}/"
@@ -1076,15 +1049,6 @@ async def process_clip_link(event):
             ),
             parse_mode='html'
         )
-
-        # Enviar el clip al canal de logs
-        log_message = (
-            f"🎥 <b>Nuevo Clip Grabado</b>\n\n"
-            f"👤 <b>Modelo:</b> {modelo}\n"
-            f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
-            f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
-        )
-        await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=log_message, parse_mode='html')
 
         # Limpiar después de enviar
         os.remove(filename)
