@@ -18,11 +18,19 @@ from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse
 import json
 
-# Configuración de la API
-API_ID = 24738183
-API_HASH = '6a1c48cfe81b1fc932a02c4cc1d312bf'
-BOT_TOKEN = "8031762443:AAHCCahQLQvMZiHx4YNoVzuprzN3s_BM8Es"
+# Cargar configuración desde config.json
+with open("config.json", "r") as f:
+    config = json.load(f)
 
+API_ID = config.get("API_ID")
+API_HASH = config.get("API_HASH")
+BOT_TOKEN = config.get("BOT_TOKEN")
+
+# Verificar si los valores necesarios están configurados
+if not all([API_ID, API_HASH, BOT_TOKEN]):
+    raise ValueError("❌ Configuración incompleta en config.json. Asegúrate de definir API_ID, API_HASH y BOT_TOKEN.")
+
+# Inicializar el bot
 bot = TelegramClient('my_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 
 # Configurar logs
@@ -936,10 +944,24 @@ async def delete_link(event):
     else:
         await event.respond("❗ Enlace no encontrado o comando incorrecto. Usa /eliminar_enlace <enlace>.")
 
-# Comando para mostrar el estado del bot
+# Comando para mostrar el estado del bot y del driver
 @bot.on(events.NewMessage(pattern='/status'))
 async def show_status(event):
-    await event.respond("✅ El bot está en funcionamiento y listo para grabar.")
+    global driver  # Accede al driver global
+    if driver is not None:
+        try:
+            # Verificar que el driver esté funcional haciendo una llamada básica
+            driver.title  # Intentar acceder a una propiedad para confirmar que no está cerrado
+            driver_status = "🟢 El driver de Selenium está funcionando correctamente."
+        except Exception as e:
+            driver_status = f"🔴 El driver de Selenium no está funcional: {e}"
+    else:
+        driver_status = "🔴 El driver de Selenium no está inicializado."
+
+    # Respuesta general del bot
+    await event.respond(
+        f"✅ El bot está en funcionamiento.\n\n{driver_status}"
+    )
 
 @bot.on(events.NewMessage(pattern='/estado_grabacion'))
 async def check_recording_status(event):
@@ -1111,20 +1133,16 @@ async def process_url(event):
         asyncio.create_task(handle_link(event.chat_id, event.sender_id, url))
 
 async def handle_link(chat_id, user_id, link):
-    # Configura e inicializa el driver
-    chrome_options = Options()
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    driver = webdriver.Chrome(service=Service("/usr/bin/chromedriver"), options=chrome_options)
+    global driver  # Reutilizar el driver global
+    if driver is None:
+        driver = setup_driver()  # Configura el driver solo si aún no está inicializado
 
     try:
         # Llama a la función de verificación y descarga
         await verify_and_download(link, user_id, chat_id, driver)
-    finally:
-        # Cierra el driver para liberar recursos
-        driver.quit()
+    except Exception as e:
+        logging.error(f"Error en handle_link para {link}: {e}")
+    # No cerramos el driver aquí para reutilizarlo en otras llamadas
 
 async def verify_and_download(link, user_id, chat_id, driver):
     # Verifica y descarga usando el driver
