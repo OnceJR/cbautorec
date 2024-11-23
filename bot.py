@@ -989,13 +989,18 @@ async def process_clip_link(event):
     if event.sender_id in pending_clips and pending_clips[event.sender_id]:
         url = event.text.strip()
 
+        # Validar si es un enlace válido
         if not is_valid_url(url):
             logging.warning(f"Enlace inválido ignorado: {url}")
-            # Ignorar sin enviar mensaje de error
-            del pending_clips[event.sender_id]
+            del pending_clips[event.sender_id]  # Eliminar el estado de clip pendiente
             return
 
-        modelo = url.split('/')[-1].split('.')[0]
+        # Extraer el nombre del modelo del enlace
+        try:
+            modelo = url.split('amlst:')[1].split('-')[0]  # Extraer lo que está después de 'amlst:' y antes de '-'
+        except IndexError:
+            modelo = "Modelo_Desconocido"
+
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
         progress_message = await event.reply("⏳ Grabando clip de 30 segundos...")
@@ -1014,6 +1019,7 @@ async def process_clip_link(event):
         thumbnail_path = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_thumb.jpg"
 
         try:
+            # Generar previews cada 5 segundos
             for i in range(5, 31, 5):  # Actualizar cada 5 segundos
                 await asyncio.sleep(5)
 
@@ -1045,15 +1051,31 @@ async def process_clip_link(event):
             del pending_clips[event.sender_id]
             return
 
-        await progress_message.edit("✅ Grabación completada. Enviando el clip...")
+        # Preparar información adicional
+        perfil_url = f"https://chaturbate.com/{modelo}/"
+        fecha_hora = time.strftime("%d/%m/%Y %H:%M:%S")
 
-        # Subir el clip al canal de logs
-        try:
-            await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=f"🎬 Clip grabado de {modelo}.")
-            await progress_message.edit(f"✅ Clip grabado y enviado al canal de logs: {LOG_CLIPS_CHANNEL}")
-        except Exception as e:
-            logging.error(f"Error al subir el clip al canal de logs: {e}")
-            await progress_message.edit("⚠️ Error al subir el clip al canal de logs.")
+        # Enviar el clip al usuario
+        await progress_message.edit("✅ Grabación completada. Enviando el clip...")
+        await bot.send_file(
+            event.chat_id, filename,
+            caption=(
+                f"🎬 <b>Clip grabado</b>\n\n"
+                f"👤 <b>Modelo:</b> {modelo}\n"
+                f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
+                f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
+            ),
+            parse_mode='html'
+        )
+
+        # Enviar el clip al canal de logs
+        log_message = (
+            f"🎥 <b>Nuevo Clip Grabado</b>\n\n"
+            f"👤 <b>Modelo:</b> {modelo}\n"
+            f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
+            f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
+        )
+        await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=log_message, parse_mode='html')
 
         # Limpiar después de enviar
         os.remove(filename)
