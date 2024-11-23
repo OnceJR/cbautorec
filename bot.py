@@ -114,13 +114,14 @@ def is_valid_url(url):
 
 # Extracción de enlace m3u8 con Selenium
 async def extract_last_m3u8_link(driver, chaturbate_link):
-    driver = setup_driver()  # Inicializa el driver dentro de la función para un uso independiente
-
+    """
+    Extrae el último enlace m3u8 de la página de extracción usando el driver proporcionado.
+    """
     # Validar que el driver esté activo antes de proceder
     if driver is None:
         logging.error("ChromeDriver no se pudo iniciar. Extracción de enlace m3u8 fallida.")
         return None
-    
+
     try:
         # Navegar a la página de extracción de m3u8
         driver.get("https://onlinetool.app/ext/m3u8_extractor")
@@ -130,7 +131,7 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
             EC.presence_of_element_located((By.NAME, "url"))
         )
         input_field.clear()
-        input_field.send_keys(chaturbate_link)  # Usar chaturbate_link en lugar de link
+        input_field.send_keys(chaturbate_link)
 
         # Esperar y hacer clic en el botón "Run"
         run_button = WebDriverWait(driver, 10).until(
@@ -155,9 +156,6 @@ async def extract_last_m3u8_link(driver, chaturbate_link):
     except Exception as e:
         logging.error(f"Error al extraer el enlace: {e}")
         return None
-    finally:
-        # Asegura que el driver se cierre al finalizar, incluso si ocurre un error
-        driver.quit()
 
 async def get_video_metadata(file_path):
     # Ejecuta ffprobe para obtener la metadata del video
@@ -604,49 +602,60 @@ async def callback_alert(event):
     # Enviar el mensaje como una alerta emergente
     await event.answer(mensaje_alerta, alert=True)
     
-# Verificación periódica de enlaces m3u8 usando un solo driver
+# Driver inicializado fuera de la función para reutilización global
+driver = None
+
 async def verificar_enlaces():
-    driver = setup_driver()  # Inicializa el driver solo una vez al inicio
+    global driver  # Reutilizar el driver globalmente
+    if driver is None:
+        driver = setup_driver()  # Inicializa el driver si aún no está configurado
 
     while driver is not None:
-        links = load_links()
-        if not links:
-            logging.warning("No se cargaron enlaces guardados.")
-            await asyncio.sleep(60)
-            continue
-
-        tasks = []
-        processed_links = {}
-
-        for user_id_str, user_links in links.items():
-            try:
-                user_id = int(user_id_str)
-            except ValueError as e:
-                logging.error(f"Error de conversión para user_id_str '{user_id_str}': {e}")
+        try:
+            links = load_links()
+            if not links:
+                logging.warning("No se cargaron enlaces guardados.")
+                await asyncio.sleep(60)
                 continue
 
-            for link in user_links:
-                if link not in processed_links:
-                    # Crear una tarea para procesar el enlace usando el mismo driver
-                    task = asyncio.create_task(process_link(driver, user_id, link))
-                    tasks.append(task)
-                    processed_links[link] = task
+            tasks = []
+            processed_links = {}
 
-        try:
+            for user_id_str, user_links in links.items():
+                try:
+                    user_id = int(user_id_str)
+                except ValueError as e:
+                    logging.error(f"Error de conversión para user_id_str '{user_id_str}': {e}")
+                    continue
+
+                for link in user_links:
+                    if link not in processed_links:
+                        # Crear una tarea para procesar el enlace usando el mismo driver
+                        task = asyncio.create_task(process_link(driver, user_id, link))
+                        tasks.append(task)
+                        processed_links[link] = task
+
             if tasks:
                 await asyncio.gather(*tasks)  # Ejecuta todas las tareas en paralelo
+
         except Exception as e:
             logging.error(f"Error en el ciclo de verificación: {e}")
-            driver.quit()  # Cierra el driver si ocurre un error crítico
-            driver = setup_driver()  # Reinstancia el driver en caso de error
+            if driver:
+                driver.quit()  # Cierra el driver en caso de error crítico
+                driver = None  # Marca el driver como no inicializado
+
+            # Reinstancia el driver después de un error
+            driver = setup_driver()
+
         else:
             logging.info("Verificación de enlaces completada. Esperando 60 segundos para la próxima verificación.")
 
         await asyncio.sleep(60)  # Espera antes de la próxima verificación
 
-    # Cerrar el driver al finalizar el ciclo o si `driver` es None
+    # Asegura que el driver se cierre correctamente al finalizar el ciclo
     if driver:
         driver.quit()
+        driver = None
 
 # Procesa cada enlace usando el mismo driver
 async def process_link(driver, user_id, link):
@@ -1002,7 +1011,7 @@ async def process_clip_link(event):
         os.remove(filename)
         del pending_clips[event.sender_id]  # Limpiar el estado del usuario
 
-# Comando para el administrador: Eliminar archivos y reiniciar el driver
+# Comando para el administrador: Eliminar archivos .part y .mp4, y reiniciar el driver
 @bot.on(events.NewMessage(pattern='/admin_reset'))
 async def admin_reset(event):
     # Verifica si el comando fue enviado por el administrador
@@ -1010,19 +1019,31 @@ async def admin_reset(event):
         await event.respond("❌ No tienes permiso para ejecutar este comando.")
         return
 
-    # Elimina todos los archivos en el directorio de descargas
+    # Elimina únicamente archivos .part y .mp4 en el directorio de descargas
     try:
+        deleted_files = []  # Mantener registro de los archivos eliminados
         for file in os.listdir(DOWNLOAD_PATH):
-            file_path = os.path.join(DOWNLOAD_PATH, file)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-        await event.respond("✅ Todos los archivos en el servidor han sido eliminados.")
+            if file.endswith(".part") or file.endswith(".mp4"):
+                file_path = os.path.join(DOWNLOAD_PATH, file)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    deleted_files.append(file)
+        
+        if deleted_files:
+            await event.respond(f"✅ Se eliminaron los siguientes archivos:\n" + "\n".join(deleted_files))
+        else:
+            await event.respond("✅ No se encontraron archivos .part o .mp4 para eliminar.")
     except Exception as e:
         await event.respond(f"❌ Error eliminando archivos: {e}")
         return
 
     # Reiniciar el driver
     try:
+        global driver
+        if driver:
+            driver.quit()  # Asegurar que el driver actual se cierra antes de reiniciarlo
+            driver = None
+        
         driver = setup_driver()  # Crear una nueva instancia del driver
         await event.respond("✅ Driver reiniciado exitosamente.")
     except Exception as e:
