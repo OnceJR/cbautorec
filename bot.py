@@ -1007,13 +1007,30 @@ async def process_clip_link(event):
 
         # Comando para grabar el clip de 30 segundos usando FFmpeg
         record_command = [
-            "ffmpeg", "-y", "-i", url, "-t", "30", 
-            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast", 
+            "ffmpeg", "-y", "-i", url, "-t", "30",
+            "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
             "-c:a", "aac", "-b:a", "128k", filename
         ]
 
+        # Registrar el comando que se ejecutará
+        logging.info(f"Ejecutando comando FFmpeg: {' '.join(record_command)}")
+
         # Ejecutar la grabación
-        process = await asyncio.create_subprocess_exec(*record_command)
+        process = await asyncio.create_subprocess_exec(
+            *record_command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        # Capturar salida y errores de FFmpeg
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode()
+            logging.error(f"Error en FFmpeg: {error_msg}")
+            await progress_message.edit(f"❌ Error durante la grabación: {error_msg}")
+            del pending_clips[event.sender_id]
+            return
 
         # Ruta para la miniatura temporal
         thumbnail_path = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_thumb.jpg"
@@ -1025,7 +1042,7 @@ async def process_clip_link(event):
 
                 # Capturar un frame como miniatura a los `i` segundos
                 thumbnail_command = [
-                    "ffmpeg", "-y", "-i", url, "-ss", str(i), "-vframes", "1", 
+                    "ffmpeg", "-y", "-i", url, "-ss", str(i), "-vframes", "1",
                     "-q:v", "2", thumbnail_path
                 ]
                 thumbnail_process = await asyncio.create_subprocess_exec(*thumbnail_command)
@@ -1042,14 +1059,6 @@ async def process_clip_link(event):
         except Exception as e:
             logging.error(f"Error durante la generación de previews: {e}")
             await progress_message.edit("⚠️ Error al actualizar el progreso con previews.")
-
-        # Esperar a que el proceso de grabación termine
-        await process.wait()
-
-        if process.returncode != 0:
-            await progress_message.edit("❌ Error durante la grabación del clip.")
-            del pending_clips[event.sender_id]
-            return
 
         # Preparar información adicional
         perfil_url = f"https://chaturbate.com/{modelo}/"
