@@ -991,18 +991,22 @@ async def process_clip_link(event):
 
         # Validar si es un enlace válido
         if not is_valid_url(url):
-            await event.reply("❌ Por favor, envía un enlace válido.")
-            del pending_clips[event.sender_id]
+            logging.warning(f"Enlace inválido ignorado: {url}")
+            del pending_clips[event.sender_id]  # Eliminar el estado de clip pendiente
+            await event.reply("❌ El enlace enviado no es válido.")
             return
 
         # Extraer el nombre del modelo del enlace
         try:
-            modelo = url.split('/')[-1].split('-')[0]
+            modelo = url.split('amlst:')[1].split('-')[0]
         except IndexError:
             modelo = "Modelo_Desconocido"
+            logging.warning("No se pudo extraer el nombre del modelo. Asignando 'Modelo_Desconocido'.")
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
+
+        logging.info(f"Iniciando grabación del clip: Modelo={modelo}, Archivo={filename}")
         progress_message = await event.reply("⏳ Grabando clip de 30 segundos...")
 
         # Comando para grabar el clip de 30 segundos usando FFmpeg
@@ -1011,49 +1015,64 @@ async def process_clip_link(event):
             "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
             "-c:a", "aac", "-b:a", "128k", filename
         ]
+        logging.info(f"Comando FFmpeg: {' '.join(record_command)}")
 
-        # Ejecutar la grabación
-        process = await asyncio.create_subprocess_exec(
-            *record_command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *record_command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
 
-        # Actualizar mensaje de progreso cada 5 segundos
-        for i in range(5, 31, 5):
-            await asyncio.sleep(5)
-            await progress_message.edit(f"⏳ Grabando clip... {i} segundos")
+            stdout, stderr = await process.communicate()
+            if process.returncode != 0:
+                error_msg = stderr.decode()
+                logging.error(f"Error en FFmpeg: {error_msg}")
+                await progress_message.edit("❌ Error durante la grabación del clip.")
+                del pending_clips[event.sender_id]
+                return
 
-        # Capturar errores de FFmpeg
-        stdout, stderr = await process.communicate()
-        if process.returncode != 0:
-            error_msg = stderr.decode()
-            logging.error(f"Error en FFmpeg: {error_msg}")
-            await progress_message.edit("❌ Error durante la grabación del clip.")
+        except Exception as e:
+            logging.error(f"Excepción durante la grabación con FFmpeg: {e}")
+            await progress_message.edit(f"❌ Error durante la grabación: {e}")
             del pending_clips[event.sender_id]
             return
 
-        # Preparar información adicional
-        perfil_url = f"https://chaturbate.com/{modelo}/"
-        fecha_hora = time.strftime("%d/%m/%Y %H:%M:%S")
-
         # Enviar el clip al usuario
-        await progress_message.edit("✅ Grabación completada. Enviando el clip...")
-        await bot.send_file(
-            event.chat_id, filename,
-            caption=(
-                f"🎬 <b>Clip grabado</b>\n\n"
+        try:
+            perfil_url = f"https://chaturbate.com/{modelo}/"
+            fecha_hora = time.strftime("%d/%m/%Y %H:%M:%S")
+            logging.info(f"Grabación completada. Preparando para enviar el archivo: {filename}")
+
+            await bot.send_file(
+                event.chat_id, filename,
+                caption=(
+                    f"🎬 <b>Clip grabado</b>\n\n"
+                    f"👤 <b>Modelo:</b> {modelo}\n"
+                    f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
+                    f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
+                ),
+                parse_mode='html'
+            )
+
+            # Enviar el clip al canal de logs
+            log_message = (
+                f"🎥 <b>Nuevo Clip Grabado</b>\n\n"
                 f"👤 <b>Modelo:</b> {modelo}\n"
                 f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
                 f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
-            ),
-            parse_mode='html'
-        )
+            )
+            await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=log_message, parse_mode='html')
 
-        # Limpiar después de enviar
-        os.remove(filename)
-        del pending_clips[event.sender_id]
-
+        except Exception as e:
+            logging.error(f"Error al enviar el archivo: {e}")
+            await progress_message.edit(f"⚠️ Error al enviar el clip grabado: {e}")
+        finally:
+            # Limpiar después de enviar
+            if os.path.exists(filename):
+                os.remove(filename)
+            del pending_clips[event.sender_id]
+            
 # Comando para el administrador: Eliminar archivos .part y .mp4, y reiniciar el driver
 @bot.on(events.NewMessage(pattern='/admin_reset'))
 async def admin_reset(event):
