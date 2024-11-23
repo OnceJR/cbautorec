@@ -59,6 +59,7 @@ DOWNLOAD_PATH = "/root/cbautorec/"
 GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
+LOG_CLIPS_CHANNEL = "@clipscb"  # Nombre del canal donde se subirán los clips
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -977,15 +978,10 @@ def is_valid_url(url):
 
 @bot.on(events.NewMessage(pattern='/clip'))
 async def start_clip(event):
-    if event.sender_id not in AUTHORIZED_USERS:
-        await event.reply("❌ No tienes permiso para usar este comando.")
-        return
-
     await event.reply(
         "⚠️ Grabación de clips en <b>fase Beta</b>. Envía el enlace del stream para grabar un clip de 30 segundos.",
         parse_mode='html'
     )
-
     pending_clips[event.sender_id] = True
 
 @bot.on(events.NewMessage)
@@ -994,13 +990,14 @@ async def process_clip_link(event):
         url = event.text.strip()
 
         if not is_valid_url(url):
-            await event.reply("❌ Por favor, envía un enlace válido.")
+            logging.warning(f"Enlace inválido ignorado: {url}")
+            # Ignorar sin enviar mensaje de error
+            del pending_clips[event.sender_id]
             return
 
         modelo = url.split('/')[-1].split('.')[0]
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
-
         progress_message = await event.reply("⏳ Grabando clip de 30 segundos...")
 
         # Comando para grabar el clip de 30 segundos usando FFmpeg
@@ -1013,25 +1010,54 @@ async def process_clip_link(event):
         # Ejecutar la grabación
         process = await asyncio.create_subprocess_exec(*record_command)
 
-        # Actualizar mensaje de progreso cada 5 segundos
-        for i in range(5, 31, 5):  # Se actualizará cada 5 segundos hasta llegar a 30
-            await asyncio.sleep(5)
-            await progress_message.edit(f"⏳ Grabando clip... {i} segundos")
+        # Ruta para la miniatura temporal
+        thumbnail_path = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_thumb.jpg"
+
+        try:
+            for i in range(5, 31, 5):  # Actualizar cada 5 segundos
+                await asyncio.sleep(5)
+
+                # Capturar un frame como miniatura a los `i` segundos
+                thumbnail_command = [
+                    "ffmpeg", "-y", "-i", url, "-ss", str(i), "-vframes", "1", 
+                    "-q:v", "2", thumbnail_path
+                ]
+                thumbnail_process = await asyncio.create_subprocess_exec(*thumbnail_command)
+                await thumbnail_process.wait()
+
+                if os.path.exists(thumbnail_path):
+                    # Actualizar el mensaje con la miniatura
+                    await progress_message.edit(
+                        f"⏳ Grabando clip... {i} segundos",
+                        file=thumbnail_path
+                    )
+                    os.remove(thumbnail_path)  # Eliminar la miniatura después de usarla
+
+        except Exception as e:
+            logging.error(f"Error durante la generación de previews: {e}")
+            await progress_message.edit("⚠️ Error al actualizar el progreso con previews.")
 
         # Esperar a que el proceso de grabación termine
         await process.wait()
 
         if process.returncode != 0:
             await progress_message.edit("❌ Error durante la grabación del clip.")
+            del pending_clips[event.sender_id]
             return
 
         await progress_message.edit("✅ Grabación completada. Enviando el clip...")
-        await bot.send_file(event.chat_id, filename, caption="🎬 Aquí tienes tu clip grabado de 30 segundos.")
 
-        # Eliminar el mensaje de progreso y el archivo local después de enviar
-        await progress_message.delete()
+        # Subir el clip al canal de logs
+        try:
+            await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=f"🎬 Clip grabado de {modelo}.")
+            await progress_message.edit(f"✅ Clip grabado y enviado al canal de logs: {LOG_CLIPS_CHANNEL}")
+        except Exception as e:
+            logging.error(f"Error al subir el clip al canal de logs: {e}")
+            await progress_message.edit("⚠️ Error al subir el clip al canal de logs.")
+
+        # Limpiar después de enviar
         os.remove(filename)
-        del pending_clips[event.sender_id]  # Limpiar el estado del usuario
+        del pending_clips[event.sender_id]
 
 # Comando para el administrador: Eliminar archivos .part y .mp4, y reiniciar el driver
 @bot.on(events.NewMessage(pattern='/admin_reset'))
