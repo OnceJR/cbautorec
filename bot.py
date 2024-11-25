@@ -1033,20 +1033,22 @@ async def process_clip_link(event):
         # Validar si es un enlace válido
         if not is_valid_url(url):
             logging.warning(f"Enlace inválido ignorado: {url}")
-            del pending_clips[event.sender_id]  # Eliminar el estado de clip pendiente
+            del pending_clips[event.sender_id]
             await event.reply("❌ El enlace enviado no es válido.")
             return
 
-        # Usar un nombre genérico para el modelo si no se extrae uno del enlace
         modelo = "Modelo_Desconocido"
-
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
+
+        # Crear directorio si no existe
+        if not os.path.exists(DOWNLOAD_PATH):
+            os.makedirs(DOWNLOAD_PATH)
 
         logging.info(f"Iniciando grabación del clip: Modelo={modelo}, Archivo={filename}")
         progress_message = await event.reply("⏳ Grabando clip de 30 segundos...")
 
-        # Comando para grabar el clip de 30 segundos usando FFmpeg
+        # Comando para grabar el clip
         record_command = [
             "ffmpeg", "-y", "-i", url, "-t", "30",
             "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
@@ -1055,16 +1057,20 @@ async def process_clip_link(event):
         logging.info(f"Comando FFmpeg: {' '.join(record_command)}")
 
         try:
+            # Ejecutar la grabación
             process = await asyncio.create_subprocess_exec(
                 *record_command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE
             )
 
+            # Leer salida y errores
             stdout, stderr = await process.communicate()
+            logging.debug(f"FFmpeg stdout: {stdout.decode()}")
+            logging.debug(f"FFmpeg stderr: {stderr.decode()}")
+
             if process.returncode != 0:
-                error_msg = stderr.decode()
-                logging.error(f"Error en FFmpeg: {error_msg}")
+                logging.error(f"Error en FFmpeg con código {process.returncode}")
                 await progress_message.edit("❌ Error durante la grabación del clip.")
                 del pending_clips[event.sender_id]
                 return
@@ -1077,9 +1083,8 @@ async def process_clip_link(event):
 
         # Enviar el clip al usuario
         try:
-            perfil_url = "N/A"
             fecha_hora = time.strftime("%d/%m/%Y %H:%M:%S")
-            logging.info(f"Grabación completada. Preparando para enviar el archivo: {filename}")
+            logging.info(f"Grabación completada. Archivo: {filename}")
 
             await bot.send_file(
                 event.chat_id, filename,
@@ -1087,25 +1092,22 @@ async def process_clip_link(event):
                     f"🎬 <b>Clip grabado</b>\n\n"
                     f"👤 <b>Modelo:</b> {modelo}\n"
                     f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
-                    f"🌐 <b>Perfil:</b> {perfil_url}"
+                    f"🌐 <b>Perfil:</b> N/A"
                 ),
                 parse_mode='html'
             )
 
-            # Enviar el clip al canal de logs
-            log_message = (
-                f"🎥 <b>Nuevo Clip Grabado</b>\n\n"
-                f"👤 <b>Modelo:</b> {modelo}\n"
-                f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
-                f"🌐 <b>Perfil:</b> {perfil_url}"
+            # Enviar al canal de logs
+            await bot.send_file(
+                LOG_CLIPS_CHANNEL, filename,
+                caption=f"🎥 Clip grabado: Modelo={modelo}, Fecha={fecha_hora}"
             )
-            await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=log_message, parse_mode='html')
 
         except Exception as e:
             logging.error(f"Error al enviar el archivo: {e}")
             await progress_message.edit(f"⚠️ Error al enviar el clip grabado: {e}")
         finally:
-            # Limpiar después de enviar
+            # Limpieza
             if os.path.exists(filename):
                 os.remove(filename)
             del pending_clips[event.sender_id]
