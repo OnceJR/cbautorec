@@ -996,12 +996,8 @@ async def process_clip_link(event):
             await event.reply("❌ El enlace enviado no es válido.")
             return
 
-        # Extraer el nombre del modelo del enlace
-        try:
-            modelo = url.split('amlst:')[1].split('-')[0]
-        except IndexError:
-            modelo = "Modelo_Desconocido"
-            logging.warning("No se pudo extraer el nombre del modelo. Asignando 'Modelo_Desconocido'.")
+        # Usar un nombre genérico para el modelo si no se extrae uno del enlace
+        modelo = "Modelo_Desconocido"
 
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         filename = f"{DOWNLOAD_PATH}{modelo}_{timestamp}_clip.mp4"
@@ -1040,7 +1036,7 @@ async def process_clip_link(event):
 
         # Enviar el clip al usuario
         try:
-            perfil_url = f"https://chaturbate.com/{modelo}/"
+            perfil_url = "N/A"
             fecha_hora = time.strftime("%d/%m/%Y %H:%M:%S")
             logging.info(f"Grabación completada. Preparando para enviar el archivo: {filename}")
 
@@ -1050,7 +1046,7 @@ async def process_clip_link(event):
                     f"🎬 <b>Clip grabado</b>\n\n"
                     f"👤 <b>Modelo:</b> {modelo}\n"
                     f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
-                    f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
+                    f"🌐 <b>Perfil:</b> {perfil_url}"
                 ),
                 parse_mode='html'
             )
@@ -1060,7 +1056,7 @@ async def process_clip_link(event):
                 f"🎥 <b>Nuevo Clip Grabado</b>\n\n"
                 f"👤 <b>Modelo:</b> {modelo}\n"
                 f"🕒 <b>Fecha y Hora:</b> {fecha_hora}\n"
-                f"🌐 <b>Perfil:</b> <a href='{perfil_url}'>{perfil_url}</a>"
+                f"🌐 <b>Perfil:</b> {perfil_url}"
             )
             await bot.send_file(LOG_CLIPS_CHANNEL, filename, caption=log_message, parse_mode='html')
 
