@@ -978,11 +978,52 @@ def is_valid_url(url):
 
 @bot.on(events.NewMessage(pattern='/clip'))
 async def start_clip(event):
-    await event.reply(
-        "⚠️ Grabación de clips en <b>fase Beta</b>. Envía el enlace del stream para grabar un clip de 30 segundos.",
-        parse_mode='html'
+    help_message = (
+        "⚠️ Grabación de clips en <b>fase Beta</b>.\n\n"
+        "👉 **¿Cómo usarlo?**\n"
+        "1️⃣ Envía el enlace m3u8 del stream al bot.\n"
+        "2️⃣ El bot grabará un clip de 30 segundos de la transmisión en vivo.\n"
+        "3️⃣ El clip será enviado a tu chat y al canal de logs.\n\n"
+        "❔ **¿Necesitas ayuda para extraer el enlace m3u8?** Usa el comando <code>/help_clips</code> para ver un tutorial detallado."
     )
+    await event.reply(help_message, parse_mode='html')
     pending_clips[event.sender_id] = True
+
+@bot.on(events.NewMessage(pattern='/help_clips'))
+async def help_clips(event):
+    tutorial = (
+        "📖 Tutorial para extraer enlaces m3u8 usando Online Tools\n\n"
+        "Un enlace m3u8 es el formato utilizado para transmitir contenido en vivo. Con él, nuestro bot puede grabar clips de 30 segundos de las transmisiones.\n\n"
+        "Pasos para obtener un enlace m3u8:\n"
+        "1️⃣ **Abre la herramienta de extracción:**\n"
+        "   Ingresa a este enlace: [Online Tools - M3U8 Extractor](https://onlinetool.app/ext/m3u8_extractor).\n\n"
+        "2️⃣ **Introduce la URL de la transmisión:**\n"
+        "   - Copia la URL de la transmisión que deseas grabar (por ejemplo, `https://chaturbate.com/tu_modelo_favorito/`).\n"
+        "   - En la página de Online Tools, encontrarás un campo que dice **\"Enter URL\"**.\n"
+        "   - Pega la URL en ese campo.\n\n"
+        "3️⃣ **Inicia la extracción:**\n"
+        "   - Haz clic en el botón **\"Run\"**.\n"
+        "   - Espera unos segundos mientras la herramienta analiza la transmisión.\n\n"
+        "4️⃣ **Copia el enlace m3u8:**\n"
+        "   - Una vez que el análisis haya terminado, verás una lista de enlaces. Busca el que termina en `.m3u8`.\n"
+        "   - Haz clic derecho sobre el enlace m3u8 y selecciona **\"Copiar dirección de enlace\"**.\n\n"
+        "5️⃣ **Envía el enlace al bot:**\n"
+        "   - Vuelve a tu chat con el bot.\n"
+        "   - Envía el enlace m3u8 directamente (sin ningún comando ni mensaje adicional).\n\n"
+        "❗ **Notas importantes:**\n"
+        "- No uses enlaces que no terminen en `.m3u8`, ya que el bot no podrá procesarlos.\n"
+        "- Si no encuentras el enlace m3u8, verifica que la transmisión esté en vivo o intenta de nuevo después de unos minutos.\n"
+        "- Algunos modelos pueden no tener enlaces m3u8 disponibles si no están transmitiendo correctamente.\n\n"
+        "👨‍💻 **Preguntas frecuentes:**\n"
+        "1️⃣ ¿Qué pasa si no encuentro el enlace m3u8?\n"
+        "   - La transmisión puede estar inactiva o el modelo tiene configuraciones que ocultan el enlace m3u8. Asegúrate de que el modelo esté en vivo y que la URL inicial sea válida.\n\n"
+        "2️⃣ ¿Puedo usar esta herramienta en mi teléfono?\n"
+        "   - Sí, Online Tools funciona tanto en dispositivos móviles como en computadoras. Sin embargo, recomendamos usar una computadora para mayor facilidad.\n\n"
+        "3️⃣ ¿Qué hago si el bot no graba mi clip después de enviar el enlace?\n"
+        "   - Revisa que hayas enviado un enlace m3u8 válido. Si el problema persiste, comunícate con el administrador del bot.\n\n"
+        "🚀 ¡Comienza ahora! Si tienes dudas, puedes preguntar al administrador del bot o consultar la herramienta directamente. ¡Feliz grabación de clips! 🎥"
+    )
+    await event.reply(tutorial, parse_mode='html')
 
 @bot.on(events.NewMessage)
 async def process_clip_link(event):
