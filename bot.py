@@ -264,7 +264,7 @@ async def handle_file_upload(user_id, chat_id, file):
         stdout, stderr = await process.communicate()
 
         if process.returncode == 0:
-            logging.info(f"Subida exitosa: {file}")
+            logging.info(f"Subida exitosa a Google Drive: {file}")
 
             # Crear enlace compartido
             share_command = ["rclone", "link", GDRIVE_PATH + file]
@@ -274,88 +274,80 @@ async def handle_file_upload(user_id, chat_id, file):
                 stderr=asyncio.subprocess.PIPE
             )
             share_stdout, share_stderr = await share_process.communicate()
-            
+
             if share_process.returncode == 0:
                 shared_link = share_stdout.strip().decode('utf-8')
-                await bot.send_message(user_id, f"✅ Video subido: {file}\n🔗 Enlace: {shared_link}")
+                await bot.send_message(user_id, f"✅ Video subido a Google Drive: {file}\n🔗 Enlace: {shared_link}")
 
                 # Notificación al canal de logs
                 await bot.send_message(
                     LOG_CHANNEL,
-                    f"✅ <b>Video Subido</b>\n\n📹 <b>Archivo:</b> {file}\n"
+                    f"✅ <b>Video Subido a Google Drive</b>\n\n📹 <b>Archivo:</b> {file}\n"
                     f"🔗 <b>Enlace:</b> {shared_link}",
                     parse_mode="html"
                 )
             else:
                 logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
-                await bot.send_message(user_id, f"❌ Error al crear enlace compartido para: {file}")
+                await bot.send_message(user_id, f"⚠️ Error al crear enlace compartido. Subiendo a Telegram...")
         else:
-            logging.error(f"Error al subir {file}: {stderr.decode('utf-8')}")
-            await bot.send_message(user_id, f"❌ Error al subir el archivo: {file}")
-            return
+            logging.error(f"Error al subir {file} a Google Drive: {stderr.decode('utf-8')}")
+            await bot.send_message(user_id, f"⚠️ Error al subir el archivo a Google Drive. Subiendo a Telegram...")
 
-        # Obtener duración y dimensiones del video
+        # Enviar el archivo directamente a Telegram si hay un error
         duration, width, height = await get_video_metadata(file_path)
         if duration is None or width is None or height is None:
-            await bot.send_message(user_id, f"❌ Error al obtener metadatos del archivo: {file}")
-            return
-
-        # Generar una miniatura temporal de forma rápida
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
-            thumbnail_path = temp_thumb.name
-
-        thumbnail_command = [
-            "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-qscale:v", "2", thumbnail_path
-        ]
-
-        try:
-            thumbnail_process = await asyncio.create_subprocess_exec(
-                *thumbnail_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await thumbnail_process.communicate()
-            logging.info("Miniatura generada exitosamente")
-        except Exception as e:
-            logging.error(f"Error al generar la miniatura: {e}")
-            await bot.send_message(user_id, "⚠️ No se pudo generar la miniatura.")
-            if os.path.exists(thumbnail_path):
-                os.remove(thumbnail_path)
-            return
-
-        # Envío del video a Telegram con soporte para streaming y miniatura
-        if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
-            await bot.send_file(
-                chat_id, 
-                file_path, 
-                caption=f"📹 Video: {file}",
-                thumb=thumbnail_path,
-                attributes=[DocumentAttributeVideo(
-                    duration=duration,
-                    w=width,
-                    h=height,
-                    supports_streaming=True
-                )]
-            )
+            await bot.send_message(user_id, f"⚠️ Error al obtener metadatos del archivo. Enviando sin miniatura.")
         else:
-            await send_large_file(chat_id, file_path, bot)
-        
-        # Eliminar archivo de miniatura y archivo de video tras envío
-        os.remove(thumbnail_path)
+            # Generar miniatura
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
+                thumbnail_path = temp_thumb.name
+
+            thumbnail_command = [
+                "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-qscale:v", "2", thumbnail_path
+            ]
+
+            try:
+                thumbnail_process = await asyncio.create_subprocess_exec(
+                    *thumbnail_command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await thumbnail_process.communicate()
+                logging.info("Miniatura generada exitosamente.")
+            except Exception as e:
+                logging.error(f"Error al generar la miniatura: {e}")
+                thumbnail_path = None
+
+            # Envío del video a Telegram
+            if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
+                await bot.send_file(
+                    chat_id,
+                    file_path,
+                    caption=f"📹 Video: {file}",
+                    thumb=thumbnail_path if thumbnail_path else None,
+                    attributes=[DocumentAttributeVideo(
+                        duration=duration,
+                        w=width,
+                        h=height,
+                        supports_streaming=True
+                    )] if duration and width and height else None
+                )
+            else:
+                await send_large_file(chat_id, file_path, bot)
+
+            # Limpiar miniatura si se generó
+            if thumbnail_path and os.path.exists(thumbnail_path):
+                os.remove(thumbnail_path)
+
+        # Eliminar archivo tras su envío
         os.remove(file_path)
         logging.info(f"Archivo eliminado: {file}")
 
     except Exception as e:
-        logging.error(f"Error en la función handle_file_upload para {file}: {e}")
+        logging.error(f"Error en handle_file_upload para {file}: {e}")
         await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
         if os.path.exists(file_path):
             os.remove(file_path)
-
-import os
-import tempfile
-import logging
-import asyncio
-from telethon.tl.types import DocumentAttributeVideo
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtain the total duration of the video file
