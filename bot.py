@@ -350,9 +350,9 @@ async def handle_file_upload(user_id, chat_id, file):
             os.remove(file_path)
 
 async def send_large_file(chat_id, file_path, bot):
-    # Obtain the total duration of the video file
+    # Obtener la duración total del archivo de video
     command_ffprobe = [
-        "ffprobe", "-v", "error", "-show_entries", "format=duration", 
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1", file_path
     ]
     process = await asyncio.create_subprocess_exec(
@@ -368,8 +368,8 @@ async def send_large_file(chat_id, file_path, bot):
         logging.error(f"Error al obtener duración del archivo {file_path}: {e}")
         await bot.send_message(chat_id, "❌ No se pudo obtener la duración del archivo.")
         return
-    
-    part_duration = 60 * 30  # Split into 30-minute parts
+
+    part_duration = 60 * 30  # Dividir en partes de 30 minutos
     current_time = 0
     part_num = 1
 
@@ -378,7 +378,7 @@ async def send_large_file(chat_id, file_path, bot):
             part_path = temp_file.name
 
         try:
-            # Create each video segment with FFmpeg
+            # Crear cada segmento de video con FFmpeg
             ffmpeg_command = [
                 "ffmpeg", "-y", "-i", file_path, "-ss", str(current_time),
                 "-t", str(part_duration), "-c", "copy", part_path
@@ -387,7 +387,7 @@ async def send_large_file(chat_id, file_path, bot):
             await process.wait()
 
             if os.path.exists(part_path):
-                # Obtain metadata for each part
+                # Obtener metadatos para cada parte
                 metadata_command = [
                     "ffprobe", "-v", "error", "-select_streams", "v:0",
                     "-show_entries", "stream=width,height,duration",
@@ -400,7 +400,7 @@ async def send_large_file(chat_id, file_path, bot):
                 )
                 meta_stdout, meta_stderr = await meta_process.communicate()
 
-                # Extract width, height, and duration values
+                # Extraer valores de ancho, alto y duración
                 width, height, duration = None, None, None
                 for line in meta_stdout.decode().splitlines():
                     if line.startswith("width="):
@@ -410,18 +410,18 @@ async def send_large_file(chat_id, file_path, bot):
                     elif line.startswith("duration="):
                         duration = int(float(line.split("=")[1]))
 
-                # Generate a thumbnail for each part
+                # Generar una miniatura para cada parte
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
                     thumbnail_path = temp_thumb.name
-                
+
                 thumbnail_command = [
-                    "ffmpeg", "-y", "-i", part_path, "-ss", "00:00:01.000", 
+                    "ffmpeg", "-y", "-i", part_path, "-ss", "00:00:01.000",
                     "-vframes", "1", "-qscale:v", "2", thumbnail_path
                 ]
                 thumb_process = await asyncio.create_subprocess_exec(*thumbnail_command)
                 await thumb_process.wait()
 
-                # Send the part with thumbnail and metadata to Telegram
+                # Enviar la parte con miniatura y metadatos a Telegram
                 await bot.send_file(
                     chat_id,
                     part_path,
@@ -435,7 +435,7 @@ async def send_large_file(chat_id, file_path, bot):
                     )]
                 )
 
-                # Remove the thumbnail and part files after sending
+                # Eliminar los archivos temporales después de enviarlos
                 os.remove(thumbnail_path)
                 os.remove(part_path)
             else:
