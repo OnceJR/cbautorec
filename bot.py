@@ -60,6 +60,7 @@ GDRIVE_PATH = "gdrive:/182Bi69ovEbkvZAlcIYYf-pV1UCeEzjXH/"
 MAX_TELEGRAM_SIZE = 2 * 1024 * 1024 * 1024  # 2 GB en bytes
 LOG_CHANNEL = "@logscbdl"
 LOG_CLIPS_CHANNEL = "@clipscb"  # Nombre del canal donde se subirán los clips
+DOODSTREAM_API_KEY = "470375e32zzcqzbz5sf7ba"  # Tu API Key de Doodstream
 
 ADMIN_ID = 1170684259  # ID del administrador autorizado
 AUTHORIZED_USERS = {1170684259, 1218594540}
@@ -248,106 +249,132 @@ async def upload_and_notify(user_id, chat_id, file_path):
 
 async def handle_file_upload(user_id, chat_id, file):
     file_path = os.path.join(DOWNLOAD_PATH, file)
-    command = ["rclone", "copy", file_path, GDRIVE_PATH]
+
+    # Verificar si el archivo existe
+    if not os.path.exists(file_path):
+        await bot.send_message(user_id, f"❌ El archivo {file} no existe o fue movido.")
+        return
 
     try:
-        if not os.path.exists(file_path):
-            await bot.send_message(user_id, f"❌ El archivo {file} no existe o fue movido.")
-            return
-
-        # Subida a Google Drive
-        process = await asyncio.create_subprocess_exec(
-            *command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+        # 1. Subida a Google Drive
+        command_gdrive = ["rclone", "copy", file_path, GDRIVE_PATH]
+        process_gdrive = await asyncio.create_subprocess_exec(
+            *command_gdrive, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await process_gdrive.communicate()
 
-        if process.returncode == 0:
-            logging.info(f"Subida exitosa a Google Drive: {file}")
-
+        if process_gdrive.returncode == 0:
             # Crear enlace compartido
             share_command = ["rclone", "link", GDRIVE_PATH + file]
             share_process = await asyncio.create_subprocess_exec(
-                *share_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                *share_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
             share_stdout, share_stderr = await share_process.communicate()
 
             if share_process.returncode == 0:
-                shared_link = share_stdout.strip().decode('utf-8')
-                await bot.send_message(user_id, f"✅ Video subido a Google Drive: {file}\n🔗 Enlace: {shared_link}")
-
-                # Notificación al canal de logs
+                shared_link = share_stdout.strip().decode("utf-8")
+                await bot.send_message(user_id, f"✅ Video subido a Google Drive:\n🔗 {shared_link}")
                 await bot.send_message(
                     LOG_CHANNEL,
-                    f"✅ <b>Video Subido a Google Drive</b>\n\n📹 <b>Archivo:</b> {file}\n"
-                    f"🔗 <b>Enlace:</b> {shared_link}",
-                    parse_mode="html"
+                    f"✅ <b>Video Subido a Google Drive</b>\n\n📹 <b>Archivo:</b> {file}\n🔗 <b>Enlace:</b> {shared_link}",
+                    parse_mode="html",
                 )
+                return
             else:
-                logging.error(f"Error al crear enlace compartido para {file}: {share_stderr.decode('utf-8')}")
-                await bot.send_message(user_id, f"⚠️ Error al crear enlace compartido. Subiendo a Telegram...")
+                logging.error(f"Error al crear enlace compartido: {share_stderr.decode('utf-8')}")
+                await bot.send_message(user_id, "⚠️ Error al crear enlace compartido. Intentando con Doodstream...")
         else:
             logging.error(f"Error al subir {file} a Google Drive: {stderr.decode('utf-8')}")
-            await bot.send_message(user_id, f"⚠️ Error al subir el archivo a Google Drive. Subiendo a Telegram...")
+            await bot.send_message(user_id, "⚠️ Error al subir a Google Drive. Intentando con Doodstream...")
 
-        # Enviar el archivo directamente a Telegram si hay un error
-        duration, width, height = await get_video_metadata(file_path)
-        if duration is None or width is None or height is None:
-            await bot.send_message(user_id, f"⚠️ Error al obtener metadatos del archivo. Enviando sin miniatura.")
+        # 2. Subida a Doodstream
+        doodstream_result = await upload_to_doodstream(file_path)
+
+        if doodstream_result:
+            message = (
+                f"✅ <b>Video Subido a Doodstream</b>\n\n"
+                f"📹 <b>Archivo:</b> {file}\n"
+                f"🔗 <b>Descargar:</b> {doodstream_result['video_url']}\n"
+                f"🔗 <b>Ver Online:</b> {doodstream_result['embed_url']}\n"
+                f"🖼️ <b>Miniatura:</b> {doodstream_result['thumbnail_url']}"
+            )
+            await bot.send_message(user_id, message, parse_mode="html")
+            await bot.send_message(LOG_CHANNEL, message, parse_mode="html")
+            return
         else:
-            # Generar miniatura
+            await bot.send_message(user_id, "⚠️ Falló la subida a Doodstream. Intentando enviar el archivo a Telegram...")
+
+        # 3. Subida a Telegram
+        duration, width, height = await get_video_metadata(file_path)
+
+        # Generar miniatura
+        thumbnail_path = None
+        try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp_thumb:
                 thumbnail_path = temp_thumb.name
 
             thumbnail_command = [
                 "ffmpeg", "-y", "-i", file_path, "-ss", "00:00:01.000", "-vframes", "1", "-qscale:v", "2", thumbnail_path
             ]
+            thumb_process = await asyncio.create_subprocess_exec(
+                *thumbnail_command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            )
+            await thumb_process.communicate()
+        except Exception as e:
+            logging.error(f"Error al generar la miniatura: {e}")
 
-            try:
-                thumbnail_process = await asyncio.create_subprocess_exec(
-                    *thumbnail_command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
-                )
-                await thumbnail_process.communicate()
-                logging.info("Miniatura generada exitosamente.")
-            except Exception as e:
-                logging.error(f"Error al generar la miniatura: {e}")
-                thumbnail_path = None
+        # Enviar a Telegram
+        if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
+            await bot.send_file(
+                chat_id,
+                file_path,
+                caption=f"📹 Archivo enviado directamente a Telegram: {file}",
+                thumb=thumbnail_path,
+                attributes=[DocumentAttributeVideo(
+                    duration=duration, w=width, h=height, supports_streaming=True
+                )] if duration and width and height else None
+            )
+        else:
+            await send_large_file(chat_id, file_path, bot)
 
-            # Envío del video a Telegram
-            if os.path.getsize(file_path) <= MAX_TELEGRAM_SIZE:
-                await bot.send_file(
-                    chat_id,
-                    file_path,
-                    caption=f"📹 Video: {file}",
-                    thumb=thumbnail_path if thumbnail_path else None,
-                    attributes=[DocumentAttributeVideo(
-                        duration=duration,
-                        w=width,
-                        h=height,
-                        supports_streaming=True
-                    )] if duration and width and height else None
-                )
-            else:
-                await send_large_file(chat_id, file_path, bot)
-
-            # Limpiar miniatura si se generó
-            if thumbnail_path and os.path.exists(thumbnail_path):
-                os.remove(thumbnail_path)
-
-        # Eliminar archivo tras su envío
-        os.remove(file_path)
-        logging.info(f"Archivo eliminado: {file}")
+        # Limpiar miniatura si existe
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            os.remove(thumbnail_path)
 
     except Exception as e:
         logging.error(f"Error en handle_file_upload para {file}: {e}")
-        await bot.send_message(user_id, f"❌ Error en el proceso de subida y eliminación para {file}: {e}")
+        await bot.send_message(user_id, f"❌ Error durante la subida: {e}")
+
+    finally:
+        # Limpiar archivo original
         if os.path.exists(file_path):
             os.remove(file_path)
+
+# Función para subir a Doodstream
+async def upload_to_doodstream(file_path):
+    doodstream_url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(doodstream_url) as resp:
+                data = await resp.json()
+                upload_url = data.get("result")
+
+                if not upload_url:
+                    logging.error("Error al obtener URL de subida de Doodstream")
+                    return None
+
+            with open(file_path, "rb") as f:
+                files = {"file": f}
+                async with session.post(upload_url, data=files) as upload_resp:
+                    upload_data = await upload_resp.json()
+                    if upload_resp.status == 200:
+                        return upload_data
+                    else:
+                        logging.error(f"Error al subir a Doodstream: {upload_resp.status}")
+                        return None
+    except Exception as e:
+        logging.error(f"Excepción al subir a Doodstream: {e}")
+        return None
 
 async def send_large_file(chat_id, file_path, bot):
     # Obtener la duración total del archivo de video
