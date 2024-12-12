@@ -353,27 +353,52 @@ async def handle_file_upload(user_id, chat_id, file):
 # Función para subir a Doodstream
 async def upload_to_doodstream(file_path):
     doodstream_url = f"https://doodapi.com/api/upload/server?key={DOODSTREAM_API_KEY}"
+    max_retries = 3  # Número máximo de reintentos
+
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60)) as session:
+            # Obtener el servidor de subida
             async with session.get(doodstream_url) as resp:
+                if resp.status != 200:
+                    logging.error(f"Error al obtener URL de subida de Doodstream: HTTP {resp.status}")
+                    return None
+
                 data = await resp.json()
                 upload_url = data.get("result")
 
                 if not upload_url:
-                    logging.error("Error al obtener URL de subida de Doodstream")
+                    logging.error("Error: No se recibió una URL válida para subir el archivo a Doodstream.")
                     return None
 
-            with open(file_path, "rb") as f:
-                files = {"file": f}
-                async with session.post(upload_url, data=files) as upload_resp:
-                    upload_data = await upload_resp.json()
-                    if upload_resp.status == 200:
-                        return upload_data
-                    else:
-                        logging.error(f"Error al subir a Doodstream: {upload_resp.status}")
-                        return None
+            # Subir el archivo con reintentos
+            for attempt in range(1, max_retries + 1):
+                try:
+                    with open(file_path, "rb") as f:
+                        files = {"file": f}
+                        async with session.post(upload_url, data=files) as upload_resp:
+                            if upload_resp.status == 200:
+                                upload_data = await upload_resp.json()
+                                if "video_url" in upload_data and "embed_url" in upload_data:
+                                    return upload_data
+                                else:
+                                    logging.error(f"Respuesta inválida al subir a Doodstream: {upload_data}")
+                                    return None
+                            else:
+                                logging.error(
+                                    f"Intento {attempt}: Error {upload_resp.status} al subir a Doodstream."
+                                )
+                except Exception as e:
+                    logging.error(f"Intento {attempt}: Excepción al subir a Doodstream: {e}")
+
+                if attempt < max_retries:
+                    logging.info(f"Reintentando subir a Doodstream ({attempt}/{max_retries})...")
+
+            # Si se agotaron los intentos
+            logging.error("Fallo la subida a Doodstream tras múltiples intentos.")
+            return None
+
     except Exception as e:
-        logging.error(f"Excepción al subir a Doodstream: {e}")
+        logging.error(f"Excepción general al interactuar con Doodstream: {e}")
         return None
 
 async def send_large_file(chat_id, file_path, bot):
